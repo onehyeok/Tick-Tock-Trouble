@@ -1,9 +1,34 @@
 fileFormatVersion: 2
-guid: eb04093779d1f214d8dfc55d59aac3aa
+guid: cbc2091fad969c040988625cd7a77eea
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: BakedMaterial
+    second: {fileID: 2100000, guid: aef0b9e8e054d6e48a96900fd990ffb2, type: 2}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: texture_0
+    second: {fileID: 2800000, guid: 377ab7d1c1b2cf546856ec3422a73485, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: texture_0_metallic
+    second: {fileID: 2800000, guid: 52c10b5691fbbe6498f7e33e1587abe3, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: texture_0_normal
+    second: {fileID: 2800000, guid: c9196174a54aa65439bbe8623d403331, type: 3}
+  - first:
+      type: UnityEngine:Texture2D
+      assembly: UnityEngine.CoreModule
+      name: texture_0_roughness
+    second: {fileID: 2800000, guid: 27197de7cc1973848854b4e6bcb2cd64, type: 3}
   materials:
     materialImportMode: 2
     materialName: 0

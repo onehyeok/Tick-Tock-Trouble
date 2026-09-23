@@ -1,50 +1,98 @@
 using UnityEngine;
 
-public class TicktoyMove : MonoBehaviour
+public class TickToyMove : MonoBehaviour
 {
+    public Vector2 MoveInput { get; private set; }
+
+    [SerializeField] private Transform cameraPivot;
+
+    private TickToyAnimation animationController;
+
     private float moveSpeed = 5f;
-    private float sensitivity = 100f;
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    private float sensitivity = 200f;
+
+    private float xRotation;
+    private Rigidbody rb;
+    private float JumpPower = 3.0f;
+    private bool IsGrounded = true;
+
+    void Awake()
+    {
+        animationController = GetComponent<TickToyAnimation>();
+        rb = GetComponent<Rigidbody>();
+    }
     void Start()
     {
-        
+        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.Locked;
     }
-
-    // Update is called once per frame
     void Update()
     {
+        InputUpdate();
+        Look();
         Move();
+        UpdateMoveAnimation();
+    }
+
+    void InputUpdate()
+    {
+        MoveInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
     }
 
     void Move()
     {
-        float moveX = Input.GetAxis("Horizontal");
-        float moveY = Input.GetAxis("Vertical");
+        Vector3 forward = transform.forward;
+        forward.y = 0;
 
+        Vector3 right = transform.right;
+        right.y = 0;
+
+        Vector3 dir = forward * MoveInput.y + right * MoveInput.x;
+
+        transform.position += dir.normalized * moveSpeed * Time.deltaTime;
+    }
+
+    void Look()
+    {
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        transform.Rotate(mouseY * sensitivity * Time.deltaTime, mouseX * sensitivity * Time.deltaTime, 0);
-        Vector3 dir = new Vector3(moveX, 0, moveY);
+        // 좌우 회전
+        transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
 
-        transform.Translate(dir.normalized * moveSpeed * Time.deltaTime);
-        
+        // 상하 회전
+        xRotation -= mouseY * sensitivity * Time.deltaTime;
+
+        xRotation = Mathf.Clamp(xRotation, -80f, 80f);
+
+        cameraPivot.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
     }
-
-    void Jump()
+    public void Jump()
     {
-        if(Input.GetKeyDown(KeyCode.Space))
-
+        if (IsGrounded)
         {
-
+            rb.AddForce(Vector3.up * JumpPower, ForceMode.Impulse);
+            IsGrounded = false;
         }
     }
 
-    void Lay()
+    void UpdateMoveAnimation()
     {
-        if(Input.GetKeyDown(KeyCode.Z))
+        if (MoveInput.magnitude > 0.1f)
         {
+            animationController.SetMove(true);
+        }
+        else
+        {
+            animationController.SetMove(false);
+        }
+    }
 
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.gameObject.layer == LayerMask.NameToLayer("Ground"))
+        {
+            IsGrounded = true;
         }
     }
 }

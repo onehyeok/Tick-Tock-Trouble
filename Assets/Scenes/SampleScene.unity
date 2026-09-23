@@ -741,6 +741,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f8b8c3496f748c1448de8817679b09ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WinderAnimation
+  _OnJump:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 787318832}
+        m_TargetAssemblyTypeName: WinderMove, Assembly-CSharp
+        m_MethodName: Jump
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!4 &787318834
 Transform:
   m_ObjectHideFlags: 0
@@ -925,7 +940,7 @@ GameObject:
   - component: {fileID: 1188905394}
   - component: {fileID: 1188905393}
   - component: {fileID: 1188905392}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: Plane
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1148,27 +1163,27 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalScale.x
-      value: 0.63411134
+      value: 0.5156895
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalScale.y
-      value: 0.63411134
+      value: 0.4256522
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalScale.z
-      value: 0.63411134
+      value: 0.57355165
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.00019
+      value: -0.0001
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.00099
+      value: 0.00145
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.00529
+      value: 0.00189
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1180,11 +1195,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.0115872305
+      value: 0.011587228
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.007484706
+      value: 0.00748462
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 33f8b5f48890bb14285b9b92d649afb9, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x

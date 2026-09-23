@@ -1,26 +1,26 @@
 using UnityEngine;
+using UnityEngine.Events;
 
 public class WinderAnimation : MonoBehaviour
 {
     private Animator animator;
-    private WinderMove move;
+    
+    [SerializeField] UnityEvent _OnJump;
 
     void Awake()
     {
         animator = GetComponentInChildren<Animator>();
-        move = GetComponent<WinderMove>();
     }
 
     void Update()
     {
-        UpdateAnimation();
         Attack();
         Jump();
     }
 
-    void UpdateAnimation()
+    public void SetMove(bool isMove)
     {
-        if (move.MoveInput.magnitude > 0.1f)
+        if(isMove)
         {
             animator.SetInteger("State", 1);
         }
@@ -29,6 +29,7 @@ public class WinderAnimation : MonoBehaviour
             animator.SetInteger("State", 0);
         }
     }
+    
 
     void Attack()
     {
@@ -42,6 +43,7 @@ public class WinderAnimation : MonoBehaviour
     {
         if(Input.GetKeyDown(KeyCode.Space))
         {
+            _OnJump.Invoke();
             animator.SetTrigger("Jump");
         }
     }
