@@ -4,23 +4,34 @@ using UnityEngine.Events;
 public class WinderAnimation : MonoBehaviour
 {
     private Animator animator;
-    
-    [SerializeField] UnityEvent _OnJump;
+    private WinderMove move;
+
+    [SerializeField] private UnityEvent _OnJump;
 
     void Awake()
     {
         animator = GetComponentInChildren<Animator>();
+        move = GetComponent<WinderMove>();
     }
 
     void Update()
     {
         Attack();
         Jump();
+
+ 
+
+        if (Input.GetKeyDown(KeyCode.K))
+        {
+            move.IsDead = true;
+
+            animator.SetTrigger("Die");
+        }
     }
 
     public void SetMove(bool isMove)
     {
-        if(isMove)
+        if (isMove)
         {
             animator.SetInteger("State", 1);
         }
@@ -29,22 +40,45 @@ public class WinderAnimation : MonoBehaviour
             animator.SetInteger("State", 0);
         }
     }
-    
+
+    public void SetProne(bool isProne)
+    {
+        animator.SetBool("IsProne", isProne);
+    }
 
     void Attack()
     {
-        if(Input.GetMouseButtonDown(0))
+        if (move.IsDead)
+            return;
+
+        AnimatorStateInfo state =
+            animator.GetCurrentAnimatorStateInfo(0);
+
+        if (Input.GetMouseButton(0))
         {
-            animator.SetTrigger("Attack");
+            if (!state.IsName("Attack"))
+            {
+                animator.SetTrigger("Attack");
+            }
         }
     }
-    
+
     void Jump()
     {
-        if(Input.GetKeyDown(KeyCode.Space))
+        if (move.IsDead)
+            return;
+
+        AnimatorStateInfo state =
+            animator.GetCurrentAnimatorStateInfo(0);
+
+        if (Input.GetKey(KeyCode.Space)
+            && move.IsGrounded)
         {
-            _OnJump.Invoke();
-            animator.SetTrigger("Jump");
+            if (!state.IsName("Jump"))
+            {
+                _OnJump.Invoke();
+                animator.SetTrigger("Jump");
+            }
         }
     }
 }

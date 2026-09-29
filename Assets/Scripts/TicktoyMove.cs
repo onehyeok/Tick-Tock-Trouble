@@ -9,26 +9,44 @@ public class TickToyMove : MonoBehaviour
     private TickToyAnimation animationController;
 
     private float moveSpeed = 5f;
+    [SerializeField] private float proneMoveSpeedMultiplier = 0.5f;
     private float sensitivity = 200f;
 
     private float xRotation;
     private Rigidbody rb;
     private float JumpPower = 3.0f;
-    private bool IsGrounded = true;
+
+    private bool isGrounded = true;
+    private bool isProne = false;
+    private bool isDead = false;
+
+    public bool IsGrounded => isGrounded;
+
+    public bool IsDead
+    {
+        get { return isDead; }
+        set { isDead = value; }
+    }
 
     void Awake()
     {
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
     }
+
     void Start()
     {
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
     }
+
     void Update()
     {
+        if (isDead)
+            return;
+
         InputUpdate();
+        Prone();
         Look();
         Move();
         UpdateMoveAnimation();
@@ -36,7 +54,16 @@ public class TickToyMove : MonoBehaviour
 
     void InputUpdate()
     {
-        MoveInput = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        MoveInput = new Vector2(
+            Input.GetAxisRaw("Horizontal"),
+            Input.GetAxisRaw("Vertical"));
+    }
+
+    void Prone()
+    {
+        isProne = Input.GetKey(KeyCode.Z);
+
+        animationController.SetProne(isProne);
     }
 
     void Move()
@@ -49,7 +76,8 @@ public class TickToyMove : MonoBehaviour
 
         Vector3 dir = forward * MoveInput.y + right * MoveInput.x;
 
-        transform.position += dir.normalized * moveSpeed * Time.deltaTime;
+        float currentSpeed = isProne ? moveSpeed * proneMoveSpeedMultiplier : moveSpeed;
+        transform.position += dir.normalized * currentSpeed * Time.deltaTime;
     }
 
     void Look()
@@ -57,27 +85,34 @@ public class TickToyMove : MonoBehaviour
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        // 좌우 회전
-        transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
+        transform.Rotate(
+            Vector3.up * mouseX * sensitivity * Time.deltaTime);
 
-        // 상하 회전
         xRotation -= mouseY * sensitivity * Time.deltaTime;
 
         xRotation = Mathf.Clamp(xRotation, -80f, 80f);
 
-        cameraPivot.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
+        cameraPivot.localRotation =
+            Quaternion.Euler(xRotation, 0f, 0f);
     }
+
     public void Jump()
     {
-        if (IsGrounded)
+        if (isGrounded)
         {
-            rb.AddForce(Vector3.up * JumpPower, ForceMode.Impulse);
-            IsGrounded = false;
+            rb.AddForce(
+                Vector3.up * JumpPower,
+                ForceMode.Impulse);
+
+            isGrounded = false;
         }
     }
 
     void UpdateMoveAnimation()
     {
+        if (isProne)
+            return;
+
         if (MoveInput.magnitude > 0.1f)
         {
             animationController.SetMove(true);
@@ -90,9 +125,10 @@ public class TickToyMove : MonoBehaviour
 
     private void OnCollisionEnter(Collision collision)
     {
-        if (collision.gameObject.layer == LayerMask.NameToLayer("Ground"))
+        if (collision.gameObject.layer ==
+            LayerMask.NameToLayer("Ground"))
         {
-            IsGrounded = true;
+            isGrounded = true;
         }
     }
 }
