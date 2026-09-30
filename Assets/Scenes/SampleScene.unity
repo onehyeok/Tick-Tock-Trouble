@@ -1535,6 +1535,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TicktoyMove
   cameraPivot: {fileID: 936830438}
+  cameraDistance: 1.85
+  cameraHeight: 0.95
+  cameraLookHeight: 0.78
+  cameraVerticalRange: 0.5
+  minCameraPitch: -20
+  maxCameraPitch: 45
+  cameraSmooth: 14
+  fixedFieldOfView: 78
+  moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
 --- !u!54 &1444694987
 Rigidbody:
@@ -1674,12 +1683,12 @@ GameObject:
   - component: {fileID: 1605049432}
   - component: {fileID: 1605049437}
   m_Layer: 0
-  m_Name: Player
+  m_Name: Volt
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1605049432
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1693,6 +1702,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TicktoyMove
   cameraPivot: {fileID: 0}
+  cameraDistance: 1.85
+  cameraHeight: 0.95
+  cameraLookHeight: 0.78
+  cameraVerticalRange: 0.5
+  minCameraPitch: -20
+  maxCameraPitch: 45
+  cameraSmooth: 14
+  fixedFieldOfView: 78
+  moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
 --- !u!65 &1605049433
 BoxCollider:

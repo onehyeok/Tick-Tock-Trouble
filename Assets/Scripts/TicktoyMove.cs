@@ -4,16 +4,26 @@ public class TickToyMove : MonoBehaviour
 {
     public Vector2 MoveInput { get; private set; }
 
-    [SerializeField] private Transform cameraPivot;
+    [Header("TPS Camera")]
+    [SerializeField, HideInInspector] private Transform cameraPivot;
+    private const float CameraDistance = 1f;
+    private const float CameraHeight = 0.95f;
+    private const float CameraLookHeight = 0.78f;
+    private const float CameraVerticalRange = 0.5f;
+    private const float MinCameraPitch = -20f;
+    private const float MaxCameraPitch = 45f;
+    private const float CameraSmooth = 14f;
+    private const float FixedFieldOfView = 78f;
 
     private TickToyAnimation animationController;
 
-    private float moveSpeed = 5f;
+    [SerializeField] private float moveSpeed = 5f;
     [SerializeField] private float proneMoveSpeedMultiplier = 0.5f;
-    private float sensitivity = 200f;
+    [SerializeField] private float sensitivity = 200f;
 
-    private float xRotation;
+    private float cameraPitch = 15f;
     private Rigidbody rb;
+    private Camera tpsCamera;
     private float JumpPower = 3.0f;
 
     private bool isGrounded = true;
@@ -32,6 +42,7 @@ public class TickToyMove : MonoBehaviour
     {
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
+        tpsCamera = cameraPivot != null ? cameraPivot.GetComponent<Camera>() : null;
     }
 
     void Start()
@@ -50,6 +61,11 @@ public class TickToyMove : MonoBehaviour
         Look();
         Move();
         UpdateMoveAnimation();
+    }
+
+    void LateUpdate()
+    {
+        UpdateTpsCamera();
     }
 
     void InputUpdate()
@@ -88,12 +104,33 @@ public class TickToyMove : MonoBehaviour
         transform.Rotate(
             Vector3.up * mouseX * sensitivity * Time.deltaTime);
 
-        xRotation -= mouseY * sensitivity * Time.deltaTime;
+        cameraPitch -= mouseY * sensitivity * Time.deltaTime;
+        cameraPitch = Mathf.Clamp(cameraPitch, MinCameraPitch, MaxCameraPitch);
+    }
 
-        xRotation = Mathf.Clamp(xRotation, -80f, 80f);
+    void UpdateTpsCamera()
+    {
+        if (cameraPivot == null)
+            return;
 
-        cameraPivot.localRotation =
-            Quaternion.Euler(xRotation, 0f, 0f);
+        if (tpsCamera != null)
+        {
+            tpsCamera.fieldOfView = FixedFieldOfView;
+        }
+
+        float pitchRadians = cameraPitch * Mathf.Deg2Rad;
+        Vector3 targetLocalPosition = new Vector3(
+            0f,
+            CameraHeight + Mathf.Sin(pitchRadians) * CameraVerticalRange,
+            -CameraDistance * Mathf.Cos(pitchRadians));
+
+        cameraPivot.localPosition = Vector3.Lerp(
+            cameraPivot.localPosition,
+            targetLocalPosition,
+            Time.deltaTime * CameraSmooth);
+
+        Vector3 lookTarget = transform.position + Vector3.up * CameraLookHeight;
+        cameraPivot.LookAt(lookTarget, Vector3.up);
     }
 
     public void Jump()
