@@ -30,6 +30,7 @@ public class TickToyMove : MonoBehaviour
     private bool isGrounded = true;
     private bool isProne = false;
     private bool isDead = false;
+    private bool runAbilityActive;
 
     public bool IsGrounded => isGrounded;
 
@@ -95,7 +96,9 @@ public class TickToyMove : MonoBehaviour
 
         Vector3 dir = forward * MoveInput.y + right * MoveInput.x;
 
-        float currentSpeed = isProne ? moveSpeed * proneMoveSpeedMultiplier : moveSpeed;
+        float currentSpeed = runAbilityActive ? moveSpeed * 1.5f : moveSpeed;
+        if (isProne)
+            currentSpeed *= proneMoveSpeedMultiplier;
         transform.position += dir.normalized * currentSpeed * Time.deltaTime;
     }
 
@@ -163,6 +166,11 @@ public class TickToyMove : MonoBehaviour
         {
             tpsCamera.gameObject.SetActive(true);
         }
+    }
+
+    public void UseRunAbility()
+    {
+        runAbilityActive = true;
     }
 
     public void Jump()

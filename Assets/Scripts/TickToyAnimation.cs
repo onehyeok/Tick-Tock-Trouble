@@ -7,9 +7,13 @@ public class TickToyAnimation : MonoBehaviour
     private Animator animator;
     private TickToyMove move;
     private GameObject[] spineSprings;
+    private Transform leftUpperLeg;
+    private Transform rightUpperLeg;
+    private Transform leftLowerLeg;
+    private Transform rightLowerLeg;
 
     [SerializeField] private UnityEvent _OnJump;
-    [SerializeField] private float windLegSpread = 8f;
+    [SerializeField] private float windLegSpread = 18f;
 
     void Awake()
     {
@@ -17,6 +21,14 @@ public class TickToyAnimation : MonoBehaviour
         move = GetComponent<TickToyMove>();
         CacheSpineSprings();
         SetSpineSpringsActive(false);
+
+        if (animator != null && animator.isHuman)
+        {
+            leftUpperLeg = animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+            rightUpperLeg = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+            leftLowerLeg = animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+            rightLowerLeg = animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+        }
     }
 
     void Update()
@@ -44,6 +56,7 @@ public class TickToyAnimation : MonoBehaviour
             Input.GetMouseButton(0) && !move.IsDead && move.MoveInput.sqrMagnitude < 0.01f && !Input.GetKey(KeyCode.Space) && !Input.GetKey(KeyCode.Z);
 
         animator.SetBool("IsWinding", isWinding);
+        move.IsWinding = isWinding;
         SetSpineSpringsActive(isWinding);
     }
 
@@ -81,20 +94,24 @@ public class TickToyAnimation : MonoBehaviour
 
     void LateUpdate()
     {
-        if (!animator.GetBool("IsWinding"))
+        if (leftUpperLeg == null || !animator.GetBool("IsWinding"))
             return;
 
-        SpreadLeg(HumanBodyBones.LeftUpperLeg, -windLegSpread);
-        SpreadLeg(HumanBodyBones.RightUpperLeg, windLegSpread);
+        SpreadLeg(leftUpperLeg, leftLowerLeg, -animator.transform.right);
+        SpreadLeg(rightUpperLeg, rightLowerLeg, animator.transform.right);
     }
 
-    void SpreadLeg(HumanBodyBones bone, float degrees)
+    void SpreadLeg(Transform upperLeg, Transform lowerLeg, Vector3 outward)
     {
-        Transform leg = animator.GetBoneTransform(bone);
-        if (leg == null)
+        if (upperLeg == null || lowerLeg == null)
             return;
 
-        leg.rotation = Quaternion.AngleAxis(degrees, transform.forward) * leg.rotation;
+        Vector3 leg = lowerLeg.position - upperLeg.position;
+        Vector3 axis = Vector3.Cross(leg, outward);
+        if (axis.sqrMagnitude < 0.0001f)
+            return;
+
+        upperLeg.rotation = Quaternion.AngleAxis(windLegSpread, axis.normalized) * upperLeg.rotation;
     }
 
     public void SetMove(bool isMove)
