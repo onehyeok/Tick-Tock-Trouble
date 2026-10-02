@@ -14,7 +14,7 @@ public class WinderMove : MonoBehaviour
 
     private float xRotation;
     private Rigidbody rb;
-    private float JumpPower = 3.0f;
+    private float JumpPower = 4.5f;
 
     private bool isGrounded = true;
     private bool isProne = false;

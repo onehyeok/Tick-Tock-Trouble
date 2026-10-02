@@ -3,9 +3,10 @@ using UnityEngine;
 public class TickToyMove : MonoBehaviour
 {
     public Vector2 MoveInput { get; private set; }
+    public bool IsWinding { get; set; }
 
     [Header("TPS Camera")]
-    [SerializeField, HideInInspector] private Transform cameraPivot;
+    [SerializeField] private Transform cameraPivot;
     private const float CameraDistance = 1f;
     private const float CameraHeight = 0.95f;
     private const float CameraLookHeight = 0.78f;
@@ -24,7 +25,7 @@ public class TickToyMove : MonoBehaviour
     private float cameraPitch = 15f;
     private Rigidbody rb;
     private Camera tpsCamera;
-    private float JumpPower = 3.0f;
+    private float JumpPower = 4.5f;
 
     private bool isGrounded = true;
     private bool isProne = false;
@@ -42,7 +43,7 @@ public class TickToyMove : MonoBehaviour
     {
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
-        tpsCamera = cameraPivot != null ? cameraPivot.GetComponent<Camera>() : null;
+        EnsureTpsCamera();
     }
 
     void Start()
@@ -67,6 +68,8 @@ public class TickToyMove : MonoBehaviour
     {
         UpdateTpsCamera();
     }
+
+    
 
     void InputUpdate()
     {
@@ -101,8 +104,7 @@ public class TickToyMove : MonoBehaviour
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        transform.Rotate(
-            Vector3.up * mouseX * sensitivity * Time.deltaTime);
+        transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
 
         cameraPitch -= mouseY * sensitivity * Time.deltaTime;
         cameraPitch = Mathf.Clamp(cameraPitch, MinCameraPitch, MaxCameraPitch);
@@ -110,6 +112,11 @@ public class TickToyMove : MonoBehaviour
 
     void UpdateTpsCamera()
     {
+        if (cameraPivot == null)
+        {
+            EnsureTpsCamera();
+        }
+
         if (cameraPivot == null)
             return;
 
@@ -119,18 +126,43 @@ public class TickToyMove : MonoBehaviour
         }
 
         float pitchRadians = cameraPitch * Mathf.Deg2Rad;
-        Vector3 targetLocalPosition = new Vector3(
-            0f,
-            CameraHeight + Mathf.Sin(pitchRadians) * CameraVerticalRange,
-            -CameraDistance * Mathf.Cos(pitchRadians));
+        Vector3 targetLocalPosition = new Vector3(0f, CameraHeight + Mathf.Sin(pitchRadians) * CameraVerticalRange,-CameraDistance * Mathf.Cos(pitchRadians));
 
-        cameraPivot.localPosition = Vector3.Lerp(
-            cameraPivot.localPosition,
-            targetLocalPosition,
-            Time.deltaTime * CameraSmooth);
+        cameraPivot.localPosition = Vector3.Lerp(cameraPivot.localPosition, targetLocalPosition, Time.deltaTime * CameraSmooth);
 
         Vector3 lookTarget = transform.position + Vector3.up * CameraLookHeight;
         cameraPivot.LookAt(lookTarget, Vector3.up);
+    }
+
+    void EnsureTpsCamera()
+    {
+        if (cameraPivot == null)
+        {
+            Camera childCamera = GetComponentInChildren<Camera>(true);
+            if (childCamera != null)
+            {
+                cameraPivot = childCamera.transform;
+            }
+        }
+
+        if (cameraPivot == null)
+        {
+            GameObject cameraObject = new GameObject("Camera");
+            cameraObject.transform.SetParent(transform);
+            cameraObject.transform.localPosition = new Vector3(0f, CameraHeight, -CameraDistance);
+            cameraObject.transform.localRotation = Quaternion.identity;
+
+            tpsCamera = cameraObject.AddComponent<Camera>();
+            tpsCamera.fieldOfView = FixedFieldOfView;
+            cameraPivot = cameraObject.transform;
+            return;
+        }
+
+        tpsCamera = cameraPivot.GetComponent<Camera>();
+        if (tpsCamera != null)
+        {
+            tpsCamera.gameObject.SetActive(true);
+        }
     }
 
     public void Jump()
