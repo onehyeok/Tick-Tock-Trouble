@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class TickToyMove : MonoBehaviour
 {
@@ -7,13 +8,12 @@ public class TickToyMove : MonoBehaviour
 
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
-    private const float CameraDistance = 1f;
-    private const float CameraHeight = 0.95f;
-    private const float CameraLookHeight = 0.78f;
-    private const float CameraVerticalRange = 0.5f;
+    private const float CameraDistanceScale = 1.35f;
+    private const float CameraLiftScale = 0.18f;
+    private const float CameraPitchScale = 0.35f;
     private const float MinCameraPitch = -20f;
     private const float MaxCameraPitch = 45f;
-    private const float CameraSmooth = 14f;
+    private const float CameraSmoothTime = 0.12f;
     private const float FixedFieldOfView = 78f;
 
     private TickToyAnimation animationController;
@@ -25,12 +25,29 @@ public class TickToyMove : MonoBehaviour
     private float cameraPitch = 15f;
     private Rigidbody rb;
     private Camera tpsCamera;
+    private Transform body;
+    private Vector3 bodyRestLocalPosition;
+    private float bodyHeight = 2.2f;
+    private float focusHeight = 1.1f;
+    private Vector3 cameraVelocity;
+    private bool cameraPlaced;
     private float JumpPower = 4.5f;
 
     private bool isGrounded = true;
     private bool isProne = false;
     private bool isDead = false;
     private bool runAbilityActive;
+    private float runTimeLeft;
+    private bool isFainted;
+    private float faintTimeLeft;
+    private int grantedAbility;
+    private int grantedLevel;
+    private float abilityDuration;
+
+    public bool IsFainted => isFainted;
+    public bool IsUsingAbility => runAbilityActive || isFainted;
+    public float AbilityDuration => abilityDuration;
+    public float AbilityTimeLeft => runAbilityActive ? runTimeLeft : faintTimeLeft;
 
     public bool IsGrounded => isGrounded;
 
@@ -49,6 +66,7 @@ public class TickToyMove : MonoBehaviour
 
     void Start()
     {
+        CacheBodyFrame();
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
     }
@@ -59,6 +77,27 @@ public class TickToyMove : MonoBehaviour
             return;
 
         InputUpdate();
+        if (PressedAbilityKey())
+            UseGrantedAbility();
+        UpdateRunAbility();
+
+        if (isFainted && PressedMoveKey())
+            BreakFaint();
+
+        if (isFainted && faintTimeLeft >= 0f)
+        {
+            faintTimeLeft -= Time.deltaTime;
+            if (faintTimeLeft <= 0f)
+                BreakFaint();
+        }
+
+        if (isFainted)
+        {
+            animationController.SetFaint(true);
+            Look();
+            return;
+        }
+
         Prone();
         Look();
         Move();
@@ -89,16 +128,33 @@ public class TickToyMove : MonoBehaviour
     void Move()
     {
         Vector3 forward = transform.forward;
-        forward.y = 0;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            return;
 
-        Vector3 right = transform.right;
-        right.y = 0;
-
+        forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
         Vector3 dir = forward * MoveInput.y + right * MoveInput.x;
+        if (dir.sqrMagnitude > 0.0001f)
+            dir.Normalize();
 
-        float currentSpeed = runAbilityActive ? moveSpeed * 1.5f : moveSpeed;
+        float currentSpeed = runAbilityActive ? moveSpeed * 1.4f : moveSpeed;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
+
+        if (rb != null)
+        {
+            rb.angularVelocity = Vector3.zero;
+            Vector3 velocity = rb.linearVelocity;
+            velocity.x = dir.x * currentSpeed;
+            velocity.z = dir.z * currentSpeed;
+            rb.linearVelocity = velocity;
+            return;
+        }
+
+        if (dir.sqrMagnitude < 0.0001f)
+            return;
+
         transform.position += dir.normalized * currentSpeed * Time.deltaTime;
     }
 
@@ -116,61 +172,192 @@ public class TickToyMove : MonoBehaviour
     void UpdateTpsCamera()
     {
         if (cameraPivot == null)
-        {
             EnsureTpsCamera();
-        }
 
         if (cameraPivot == null)
             return;
 
         if (tpsCamera != null)
-        {
             tpsCamera.fieldOfView = FixedFieldOfView;
-        }
+
+        Vector3 forward = transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        else
+            forward.Normalize();
 
         float pitchRadians = cameraPitch * Mathf.Deg2Rad;
-        Vector3 targetLocalPosition = new Vector3(0f, CameraHeight + Mathf.Sin(pitchRadians) * CameraVerticalRange,-CameraDistance * Mathf.Cos(pitchRadians));
+        Vector3 focus = transform.TransformPoint(bodyRestLocalPosition) + Vector3.up * focusHeight;
+        Vector3 desired = focus
+            - forward * (bodyHeight * CameraDistanceScale * Mathf.Cos(pitchRadians))
+            + Vector3.up * (bodyHeight * CameraLiftScale + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
 
-        cameraPivot.localPosition = Vector3.Lerp(cameraPivot.localPosition, targetLocalPosition, Time.deltaTime * CameraSmooth);
+        if (!cameraPlaced)
+        {
+            cameraPivot.position = desired;
+            cameraVelocity = Vector3.zero;
+            cameraPlaced = true;
+        }
+        else
+        {
+            cameraPivot.position = Vector3.SmoothDamp(cameraPivot.position, desired, ref cameraVelocity, CameraSmoothTime);
+        }
 
-        Vector3 lookTarget = transform.position + Vector3.up * CameraLookHeight;
-        cameraPivot.LookAt(lookTarget, Vector3.up);
+        cameraPivot.LookAt(focus, Vector3.up);
+    }
+
+    void CacheBodyFrame()
+    {
+        if (body == null)
+            body = transform;
+
+        bodyRestLocalPosition = transform.InverseTransformPoint(body.position);
+        focusHeight = bodyHeight * 0.46f;
+
+        SkinnedMeshRenderer[] meshes = body.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        bool hasBounds = false;
+        Bounds bounds = new Bounds(body.position, Vector3.zero);
+        for (int i = 0; i < meshes.Length; i++)
+        {
+            if (!hasBounds)
+            {
+                bounds = meshes[i].bounds;
+                hasBounds = true;
+            }
+            else
+            {
+                bounds.Encapsulate(meshes[i].bounds);
+            }
+        }
+
+        if (!hasBounds)
+            return;
+
+        bodyHeight = Mathf.Max(bounds.size.y, 1f);
+        focusHeight = bounds.center.y - body.position.y;
     }
 
     void EnsureTpsCamera()
     {
+        if (body == null)
+        {
+            Animator animator = GetComponentInChildren<Animator>(true);
+            body = animator != null ? animator.transform : transform;
+        }
+
         if (cameraPivot == null)
         {
             Camera childCamera = GetComponentInChildren<Camera>(true);
             if (childCamera != null)
-            {
                 cameraPivot = childCamera.transform;
-            }
         }
 
         if (cameraPivot == null)
         {
             GameObject cameraObject = new GameObject("Camera");
-            cameraObject.transform.SetParent(transform);
-            cameraObject.transform.localPosition = new Vector3(0f, CameraHeight, -CameraDistance);
-            cameraObject.transform.localRotation = Quaternion.identity;
-
+            cameraObject.transform.SetParent(transform, false);
             tpsCamera = cameraObject.AddComponent<Camera>();
             tpsCamera.fieldOfView = FixedFieldOfView;
+            tpsCamera.nearClipPlane = 0.15f;
             cameraPivot = cameraObject.transform;
             return;
         }
 
+        if (cameraPivot.parent != transform)
+            cameraPivot.SetParent(transform, true);
+
+        cameraPivot.localScale = Vector3.one;
         tpsCamera = cameraPivot.GetComponent<Camera>();
         if (tpsCamera != null)
         {
             tpsCamera.gameObject.SetActive(true);
+            tpsCamera.fieldOfView = FixedFieldOfView;
+            tpsCamera.nearClipPlane = 0.15f;
         }
     }
 
-    public void UseRunAbility()
+    void UpdateRunAbility()
+    {
+        if (!runAbilityActive)
+            return;
+
+        runTimeLeft -= Time.deltaTime;
+        if (runTimeLeft <= 0f)
+            runAbilityActive = false;
+    }
+
+    public void GrantAbility(int kind, int level)
+    {
+        grantedAbility = kind;
+        grantedLevel = Mathf.Clamp(level, 1, 3);
+    }
+
+    void UseGrantedAbility()
+    {
+        if (grantedLevel <= 0)
+            return;
+
+        int kind = grantedAbility;
+        int level = grantedLevel;
+        grantedLevel = 0;
+
+        if (kind == 1)
+            UseRunAbility(level);
+        else if (kind == 2)
+            UseFaintAbility(level);
+    }
+
+    bool PressedAbilityKey()
+    {
+        if (Input.GetKeyDown(KeyCode.R))
+            return true;
+
+        return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
+    }
+
+    bool PressedMoveKey()
+    {
+        return Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)
+            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow);
+    }
+
+    public void UseRunAbility(int level)
     {
         runAbilityActive = true;
+        if (level <= 1)
+            abilityDuration = 5f;
+        else if (level == 2)
+            abilityDuration = 8f;
+        else
+            abilityDuration = 12f;
+
+        runTimeLeft = abilityDuration;
+    }
+
+    public void UseFaintAbility(int level)
+    {
+        if (isDead)
+            return;
+
+        isFainted = true;
+        if (level <= 1)
+            abilityDuration = 10f;
+        else if (level == 2)
+            abilityDuration = 20f;
+        else
+            abilityDuration = -1f;
+
+        faintTimeLeft = abilityDuration;
+    }
+
+    public void BreakFaint()
+    {
+        if (!isFainted)
+            return;
+
+        isFainted = false;
+        animationController.SetFaint(false);
     }
 
     public void Jump()

@@ -17,6 +17,7 @@ public class WinderAnimation : MonoBehaviour
     void Update()
     {
         Attack();
+        HitFaintedTickToy();
         Jump();
 
  
@@ -60,6 +61,21 @@ public class WinderAnimation : MonoBehaviour
             {
                 animator.SetTrigger("Attack");
             }
+        }
+    }
+
+    void HitFaintedTickToy()
+    {
+        if (move.IsDead || !animator.GetCurrentAnimatorStateInfo(0).IsName("Attack"))
+            return;
+
+        Vector3 origin = transform.position + transform.forward * 0.7f + Vector3.up * 0.8f;
+        Collider[] hits = Physics.OverlapSphere(origin, 0.9f);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            TickToyMove toy = hits[i].GetComponentInParent<TickToyMove>();
+            if (toy != null)
+                toy.BreakFaint();
         }
     }
 
