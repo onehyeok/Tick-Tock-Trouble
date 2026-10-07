@@ -23,6 +23,7 @@ public class TickToyHud : MonoBehaviour
     [Header("Ability")]
     [SerializeField] private Sprite runAbilityIcon;
     [SerializeField] private Sprite faintAbilityIcon;
+    [SerializeField] private Sprite zeroAbilityIcon;
 
     [Header("UI")]
     [SerializeField] private Text countText;
@@ -40,6 +41,7 @@ public class TickToyHud : MonoBehaviour
     private AbilityKind abilityKind;
     private int abilityLevel;
     private Text windLabel;
+    private Font displayFont;
 
     void Awake()
     {
@@ -54,8 +56,7 @@ public class TickToyHud : MonoBehaviour
                 windLabel = label.GetComponent<Text>();
         }
 
-        if (abilityIconRoot != null)
-            abilityIconRoot.SetActive(false);
+        ShowEmptyAbility();
     }
 
     void Update()
@@ -122,18 +123,50 @@ public class TickToyHud : MonoBehaviour
         countText.text = "TickToy 남은 수 " + tickToyCount + "  |  Winder 남은 수 " + winderCount;
         roundText.text = "라운드 " + roundCount;
         timeText.text = "남은 시간 " + (seconds / 60).ToString("00") + ":" + (seconds % 60).ToString("00");
-        hpText.text = "HP : " + hp;
+        hpText.text = hp.ToString();
     }
 
     void ApplyFont()
     {
-        Font font = Font.CreateDynamicFontFromOSFont(new[] { "Malgun Gothic", "맑은 고딕" }, 32);
-        if (font == null)
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        Font bodyFont = Font.CreateDynamicFontFromOSFont(new[] { "Malgun Gothic", "맑은 고딕" }, 32);
+        if (bodyFont == null)
+            bodyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+        displayFont = Font.CreateDynamicFontFromOSFont(new[] { "Arial Rounded MT Bold", "Arial Rounded MT", "Trebuchet MS" }, 48);
+        if (displayFont == null)
+            displayFont = bodyFont;
 
         Text[] texts = GetComponentsInChildren<Text>(true);
         for (int i = 0; i < texts.Length; i++)
-            texts[i].font = font;
+        {
+            if (texts[i] == levelText || texts[i] == hpText)
+                continue;
+
+            texts[i].font = bodyFont;
+        }
+
+        ApplyDisplayFont(levelText, 50);
+        if (hpText != null)
+            ApplyDisplayFont(hpText, hpText.fontSize);
+        if (hpText != null)
+            hpText.color = new Color(0.45f, 0.22f, 0.08f, 1f);
+    }
+
+    void ApplyDisplayFont(Text text, int size)
+    {
+        if (text == null)
+            return;
+
+        text.font = displayFont;
+        text.fontSize = size;
+        text.fontStyle = FontStyle.Bold;
+
+        Shadow shadow = text.GetComponent<Shadow>();
+        if (shadow == null)
+            shadow = text.gameObject.AddComponent<Shadow>();
+
+        shadow.effectColor = new Color(0.18f, 0.08f, 0.02f, 0.55f);
+        shadow.effectDistance = new Vector2(2f, -2f);
     }
 
     bool ShowUsingGauge()
@@ -148,9 +181,6 @@ public class TickToyHud : MonoBehaviour
 
         if (usingToy == null || windRoot == null || windFill == null)
             return false;
-
-        if (abilityIconRoot != null)
-            abilityIconRoot.SetActive(false);
 
         if (usingToy.AbilityDuration <= 0f)
         {
@@ -183,8 +213,23 @@ public class TickToyHud : MonoBehaviour
     {
         abilityLevel = 0;
         abilityKind = AbilityKind.None;
+        ShowEmptyAbility();
+    }
+
+    void ShowEmptyAbility()
+    {
         if (abilityIconRoot != null)
-            abilityIconRoot.SetActive(false);
+            abilityIconRoot.SetActive(true);
+
+        if (abilityIcon != null)
+        {
+            abilityIcon.sprite = zeroAbilityIcon;
+            abilityIcon.preserveAspect = true;
+            abilityIcon.color = zeroAbilityIcon != null ? Color.white : new Color(1f, 1f, 1f, 0f);
+        }
+
+        if (levelText != null)
+            levelText.gameObject.SetActive(false);
     }
 
     bool PressedAbilityKey()
@@ -214,13 +259,30 @@ public class TickToyHud : MonoBehaviour
     {
         Sprite sprite = abilityKind == AbilityKind.Faint ? faintAbilityIcon : runAbilityIcon;
         abilityIconRoot.SetActive(true);
-        abilityIcon.sprite = sprite;
-        abilityIcon.color = sprite != null ? Color.white : new Color(1f, 1f, 1f, 0f);
-        abilityFallbackText.text = abilityKind == AbilityKind.Faint ? "기절하기" : "달리기";
-        abilityFallbackText.gameObject.SetActive(sprite == null);
+        if (abilityIcon != null)
+        {
+            abilityIcon.sprite = sprite;
+            abilityIcon.preserveAspect = true;
+            abilityIcon.color = sprite != null ? Color.white : new Color(1f, 1f, 1f, 0f);
+        }
+
+        if (abilityFallbackText != null)
+        {
+            abilityFallbackText.text = abilityKind == AbilityKind.Faint ? "기절하기" : "달리기";
+            abilityFallbackText.gameObject.SetActive(sprite == null);
+        }
 
         if (levelText != null)
-            levelText.text = "Lv." + abilityLevel;
+        {
+            levelText.gameObject.SetActive(true);
+            levelText.text = "Lv " + abilityLevel;
+            if (abilityLevel <= 1)
+                levelText.color = Color.white;
+            else if (abilityLevel == 2)
+                levelText.color = new Color(0.25f, 0.58f, 1f, 1f);
+            else
+                levelText.color = new Color(0.96f, 0.18f, 0.16f, 1f);
+        }
     }
 
     void ApplyAbilityToToys()

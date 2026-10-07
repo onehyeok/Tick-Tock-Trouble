@@ -14,7 +14,6 @@ public class TickToyMove : MonoBehaviour
     private const float CameraLookAheadScale = 0.4f;
     private const float MinCameraPitch = -20f;
     private const float MaxCameraPitch = 45f;
-    private const float CameraSmoothTime = 0.12f;
     private const float FixedFieldOfView = 78f;
 
     private TickToyAnimation animationController;
@@ -25,13 +24,13 @@ public class TickToyMove : MonoBehaviour
 
     private float cameraPitch = 15f;
     private Rigidbody rb;
+    private Collider bodyCollider;
     private Camera tpsCamera;
     private Transform body;
     private Vector3 bodyRestLocalPosition;
     private float bodyHeight = 2.2f;
     private float focusHeight = 1.1f;
-    private Vector3 cameraVelocity;
-    private bool cameraPlaced;
+    private float yaw;
     private float JumpPower = 4.5f;
 
     private bool isGrounded = true;
@@ -56,19 +55,32 @@ public class TickToyMove : MonoBehaviour
     public bool IsDead
     {
         get { return isDead; }
-        set { isDead = value; }
+        set
+        {
+            isDead = value;
+            if (isDead)
+                SetBodySolid(false);
+        }
     }
 
     void Awake()
     {
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
+        bodyCollider = GetComponent<Collider>();
+        if (rb != null)
+            rb.constraints = RigidbodyConstraints.FreezeRotation;
         EnsureTpsCamera();
     }
 
     void Start()
     {
         CacheBodyFrame();
+        Vector3 flat = transform.forward;
+        flat.y = 0f;
+        yaw = flat.sqrMagnitude > 0.0001f
+            ? Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg
+            : transform.eulerAngles.y;
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
     }
@@ -118,6 +130,7 @@ public class TickToyMove : MonoBehaviour
         if (isFainted)
             faintCanBreak = true;
 
+        KeepUpright();
         UpdateTpsCamera();
     }
 
@@ -135,6 +148,7 @@ public class TickToyMove : MonoBehaviour
         isProne = Input.GetKey(KeyCode.Z);
 
         animationController.SetProne(isProne);
+
     }
 
     void Move()
@@ -175,7 +189,7 @@ public class TickToyMove : MonoBehaviour
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
+        yaw += mouseX * sensitivity * Time.deltaTime;
 
         cameraPitch -= mouseY * sensitivity * Time.deltaTime;
         cameraPitch = Mathf.Clamp(cameraPitch, MinCameraPitch, MaxCameraPitch);
@@ -206,18 +220,31 @@ public class TickToyMove : MonoBehaviour
             + Vector3.up * (bodyHeight * CameraLiftScale + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
         Vector3 lookTarget = focus + forward * (bodyHeight * CameraLookAheadScale);
 
-        if (!cameraPlaced)
-        {
-            cameraPivot.position = desired;
-            cameraVelocity = Vector3.zero;
-            cameraPlaced = true;
-        }
-        else
-        {
-            cameraPivot.position = Vector3.SmoothDamp(cameraPivot.position, desired, ref cameraVelocity, CameraSmoothTime);
-        }
+        cameraPivot.position = desired;
 
-        cameraPivot.LookAt(lookTarget, Vector3.up);
+        Vector3 look = lookTarget - desired;
+        look.x = forward.x;
+        look.z = forward.z;
+        if (look.sqrMagnitude < 0.0001f)
+            return;
+
+        cameraPivot.rotation = Quaternion.LookRotation(look.normalized, Vector3.up);
+        Vector3 cameraEuler = cameraPivot.eulerAngles;
+        cameraPivot.rotation = Quaternion.Euler(cameraEuler.x, cameraEuler.y, 0f);
+    }
+
+    void KeepUpright()
+    {
+        Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
+        transform.rotation = rotation;
+
+        if (rb == null)
+            return;
+
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
+        rb.angularVelocity = Vector3.zero;
+        if (!rb.isKinematic)
+            rb.rotation = rotation;
     }
 
     void CacheBodyFrame()
@@ -355,6 +382,7 @@ public class TickToyMove : MonoBehaviour
 
         isFainted = true;
         faintCanBreak = false;
+        SetBodySolid(false);
         if (level <= 1)
             abilityDuration = 10f;
         else if (level == 2)
@@ -375,7 +403,18 @@ public class TickToyMove : MonoBehaviour
 
         isFainted = false;
         faintCanBreak = false;
+        if (!isDead)
+            SetBodySolid(true);
         animationController.SetFaint(false);
+    }
+
+    void SetBodySolid(bool solid)
+    {
+        if (bodyCollider != null)
+            bodyCollider.enabled = solid;
+
+        if (rb != null)
+            rb.isKinematic = !solid;
     }
 
     public void Jump()

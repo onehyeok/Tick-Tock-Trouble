@@ -19,6 +19,8 @@ public class TickToyAnimation : MonoBehaviour
     {
         animator = GetComponentInChildren<Animator>();
         move = GetComponent<TickToyMove>();
+        if (animator != null)
+            animator.applyRootMotion = false;
         CacheSpineSprings();
         SetSpineSpringsActive(false);
 
