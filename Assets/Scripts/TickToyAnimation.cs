@@ -64,8 +64,9 @@ public class TickToyAnimation : MonoBehaviour
     {
         if (faint)
         {
+            animator.SetBool("IsWinding", false);
             if (!IsInState("Die"))
-                animator.CrossFadeInFixedTime("Die", 0.1f, 0);
+                animator.CrossFadeInFixedTime("Die", 0.1f, 0, 0f);
             return;
         }
 

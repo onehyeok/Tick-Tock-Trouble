@@ -8,9 +8,10 @@ public class TickToyMove : MonoBehaviour
 
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
-    private const float CameraDistanceScale = 1.35f;
-    private const float CameraLiftScale = 0.18f;
-    private const float CameraPitchScale = 0.35f;
+    private const float CameraDistanceScale = 0.62f;
+    private const float CameraLiftScale = 0.22f;
+    private const float CameraPitchScale = 0.28f;
+    private const float CameraLookAheadScale = 0.4f;
     private const float MinCameraPitch = -20f;
     private const float MaxCameraPitch = 45f;
     private const float CameraSmoothTime = 0.12f;
@@ -39,6 +40,7 @@ public class TickToyMove : MonoBehaviour
     private bool runAbilityActive;
     private float runTimeLeft;
     private bool isFainted;
+    private bool faintCanBreak;
     private float faintTimeLeft;
     private int grantedAbility;
     private int grantedLevel;
@@ -81,7 +83,7 @@ public class TickToyMove : MonoBehaviour
             UseGrantedAbility();
         UpdateRunAbility();
 
-        if (isFainted && PressedMoveKey())
+        if (isFainted && faintCanBreak && PressedMoveKeyDown())
             BreakFaint();
 
         if (isFainted && faintTimeLeft >= 0f)
@@ -94,7 +96,14 @@ public class TickToyMove : MonoBehaviour
         if (isFainted)
         {
             animationController.SetFaint(true);
-            Look();
+            if (rb != null)
+            {
+                rb.angularVelocity = Vector3.zero;
+                Vector3 velocity = rb.linearVelocity;
+                velocity.x = 0f;
+                velocity.z = 0f;
+                rb.linearVelocity = velocity;
+            }
             return;
         }
 
@@ -106,6 +115,9 @@ public class TickToyMove : MonoBehaviour
 
     void LateUpdate()
     {
+        if (isFainted)
+            faintCanBreak = true;
+
         UpdateTpsCamera();
     }
 
@@ -192,6 +204,7 @@ public class TickToyMove : MonoBehaviour
         Vector3 desired = focus
             - forward * (bodyHeight * CameraDistanceScale * Mathf.Cos(pitchRadians))
             + Vector3.up * (bodyHeight * CameraLiftScale + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
+        Vector3 lookTarget = focus + forward * (bodyHeight * CameraLookAheadScale);
 
         if (!cameraPlaced)
         {
@@ -204,7 +217,7 @@ public class TickToyMove : MonoBehaviour
             cameraPivot.position = Vector3.SmoothDamp(cameraPivot.position, desired, ref cameraVelocity, CameraSmoothTime);
         }
 
-        cameraPivot.LookAt(focus, Vector3.up);
+        cameraPivot.LookAt(lookTarget, Vector3.up);
     }
 
     void CacheBodyFrame()
@@ -316,10 +329,10 @@ public class TickToyMove : MonoBehaviour
         return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
     }
 
-    bool PressedMoveKey()
+    bool PressedMoveKeyDown()
     {
-        return Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)
-            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow);
+        return Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D)
+            || Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.RightArrow);
     }
 
     public void UseRunAbility(int level)
@@ -341,6 +354,7 @@ public class TickToyMove : MonoBehaviour
             return;
 
         isFainted = true;
+        faintCanBreak = false;
         if (level <= 1)
             abilityDuration = 10f;
         else if (level == 2)
@@ -356,7 +370,11 @@ public class TickToyMove : MonoBehaviour
         if (!isFainted)
             return;
 
+        if (!faintCanBreak)
+            return;
+
         isFainted = false;
+        faintCanBreak = false;
         animationController.SetFaint(false);
     }
 
