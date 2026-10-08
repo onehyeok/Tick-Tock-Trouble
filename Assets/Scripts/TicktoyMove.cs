@@ -3,8 +3,17 @@ using UnityEngine.InputSystem;
 
 public class TickToyMove : MonoBehaviour
 {
+    public enum TickToyState
+    {
+        Play,
+        Run,
+        Faint,
+        Dead
+    }
+
     public Vector2 MoveInput { get; private set; }
     public bool IsWinding { get; set; }
+    public TickToyState State { get; private set; } = TickToyState.Play;
 
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
@@ -35,31 +44,27 @@ public class TickToyMove : MonoBehaviour
 
     private bool isGrounded = true;
     private bool isProne = false;
-    private bool isDead = false;
-    private bool runAbilityActive;
     private float runTimeLeft;
-    private bool isFainted;
     private bool faintCanBreak;
     private float faintTimeLeft;
     private int grantedAbility;
     private int grantedLevel;
     private float abilityDuration;
 
-    public bool IsFainted => isFainted;
-    public bool IsUsingAbility => runAbilityActive || isFainted;
+    public bool IsFainted => State == TickToyState.Faint;
+    public bool IsUsingAbility => State == TickToyState.Run || State == TickToyState.Faint || runTimeLeft > 0f;
     public float AbilityDuration => abilityDuration;
-    public float AbilityTimeLeft => runAbilityActive ? runTimeLeft : faintTimeLeft;
+    public float AbilityTimeLeft => runTimeLeft > 0f ? runTimeLeft : faintTimeLeft;
 
     public bool IsGrounded => isGrounded;
 
     public bool IsDead
     {
-        get { return isDead; }
+        get { return State == TickToyState.Dead; }
         set
         {
-            isDead = value;
-            if (isDead)
-                SetBodySolid(false);
+            if (value)
+                EnterDead();
         }
     }
 
@@ -87,39 +92,62 @@ public class TickToyMove : MonoBehaviour
 
     void Update()
     {
-        if (isDead)
+        if (State == TickToyState.Dead)
             return;
 
         InputUpdate();
         if (PressedAbilityKey())
             UseGrantedAbility();
-        UpdateRunAbility();
 
-        if (isFainted && faintCanBreak && PressedMoveKeyDown())
+        if (runTimeLeft > 0f)
+        {
+            runTimeLeft -= Time.deltaTime;
+            if (runTimeLeft <= 0f && State == TickToyState.Run)
+                State = TickToyState.Play;
+        }
+
+        switch (State)
+        {
+            case TickToyState.Faint:
+                TickFaint();
+                break;
+            default:
+                TickPlay();
+                break;
+        }
+    }
+
+    void TickPlay()
+    {
+        Prone();
+        Look();
+        Move(State == TickToyState.Run ? 2f : 1f);
+        UpdateMoveAnimation();
+    }
+
+    void TickFaint()
+    {
+        if (faintCanBreak && PressedMoveKeyDown())
             BreakFaint();
-
-        if (isFainted && faintTimeLeft >= 0f)
+        else if (faintTimeLeft >= 0f)
         {
             faintTimeLeft -= Time.deltaTime;
             if (faintTimeLeft <= 0f)
                 BreakFaint();
         }
 
-        if (isFainted)
+        if (State != TickToyState.Faint)
         {
-            animationController.SetFaint(true);
+            TickPlay();
             return;
         }
 
-        Prone();
-        Look();
-        Move();
-        UpdateMoveAnimation();
+        animationController.SetFaint(true);
     }
 
     void LateUpdate()
     {
-        if (isFainted)
+        if (State == TickToyState.Faint)
             faintCanBreak = true;
 
         KeepUpright();
@@ -143,7 +171,7 @@ public class TickToyMove : MonoBehaviour
 
     }
 
-    void Move()
+    void Move(float speedScale)
     {
         Vector3 forward = transform.forward;
         forward.y = 0f;
@@ -156,7 +184,7 @@ public class TickToyMove : MonoBehaviour
         if (dir.sqrMagnitude > 0.0001f)
             dir.Normalize();
 
-        float currentSpeed = runAbilityActive ? moveSpeed * 2f : moveSpeed;
+        float currentSpeed = moveSpeed * speedScale;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
 
@@ -311,16 +339,6 @@ public class TickToyMove : MonoBehaviour
         }
     }
 
-    void UpdateRunAbility()
-    {
-        if (!runAbilityActive)
-            return;
-
-        runTimeLeft -= Time.deltaTime;
-        if (runTimeLeft <= 0f)
-            runAbilityActive = false;
-    }
-
     public void GrantAbility(int kind, int level)
     {
         grantedAbility = kind;
@@ -358,7 +376,9 @@ public class TickToyMove : MonoBehaviour
 
     public void UseRunAbility(int level)
     {
-        runAbilityActive = true;
+        if (State == TickToyState.Dead)
+            return;
+
         if (level <= 1)
             abilityDuration = 5f;
         else if (level == 2)
@@ -367,14 +387,16 @@ public class TickToyMove : MonoBehaviour
             abilityDuration = 12f;
 
         runTimeLeft = abilityDuration;
+        if (State != TickToyState.Faint)
+            State = TickToyState.Run;
     }
 
     public void UseFaintAbility(int level)
     {
-        if (isDead)
+        if (State == TickToyState.Dead)
             return;
 
-        isFainted = true;
+        State = TickToyState.Faint;
         faintCanBreak = false;
         SetBodySolid(false);
         if (level <= 1)
@@ -389,17 +411,22 @@ public class TickToyMove : MonoBehaviour
 
     public void BreakFaint()
     {
-        if (!isFainted)
+        if (State != TickToyState.Faint || !faintCanBreak)
             return;
 
-        if (!faintCanBreak)
-            return;
-
-        isFainted = false;
         faintCanBreak = false;
-        if (!isDead)
-            SetBodySolid(true);
+        SetBodySolid(true);
         animationController.SetFaint(false);
+        State = runTimeLeft > 0f ? TickToyState.Run : TickToyState.Play;
+    }
+
+    void EnterDead()
+    {
+        if (State == TickToyState.Dead)
+            return;
+
+        State = TickToyState.Dead;
+        SetBodySolid(false);
     }
 
     void SetBodySolid(bool solid)

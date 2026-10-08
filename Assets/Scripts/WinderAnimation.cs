@@ -5,6 +5,8 @@ public class WinderAnimation : MonoBehaviour
 {
     private Animator animator;
     private WinderMove move;
+    private bool attackArmed;
+    private bool ignoreHeldClick;
 
     [SerializeField] private UnityEvent _OnJump;
 
@@ -16,16 +18,20 @@ public class WinderAnimation : MonoBehaviour
 
     void Update()
     {
-        Attack();
-        HitFaintedTickToy();
-        Jump();
-
- 
+        switch (move.State)
+        {
+            case WinderMove.WinderState.Dead:
+                break;
+            default:
+                Attack();
+                HitFaintedTickToy();
+                Jump();
+                break;
+        }
 
         if (Input.GetKeyDown(KeyCode.K))
         {
             move.IsDead = true;
-
             animator.SetTrigger("Die");
         }
     }
@@ -49,24 +55,56 @@ public class WinderAnimation : MonoBehaviour
 
     void Attack()
     {
-        if (move.IsDead)
+        bool held = Input.GetMouseButton(0);
+        bool swinging = IsSwinging();
+
+        if (swinging)
+        {
+            attackArmed = false;
+            animator.ResetTrigger("Attack");
+            if (Input.GetMouseButtonDown(0))
+                ignoreHeldClick = true;
+            if (!held)
+                ignoreHeldClick = false;
+            return;
+        }
+
+        if (attackArmed)
             return;
 
-        AnimatorStateInfo state =
-            animator.GetCurrentAnimatorStateInfo(0);
-
-        if (Input.GetMouseButton(0))
+        if (!held)
         {
-            if (!state.IsName("Attack"))
-            {
-                animator.SetTrigger("Attack");
-            }
+            ignoreHeldClick = false;
+            return;
         }
+
+        if (ignoreHeldClick)
+            return;
+
+        attackArmed = true;
+        animator.SetTrigger("Attack");
+    }
+
+    bool IsSwinging()
+    {
+        int layer = animator.GetLayerIndex("Attack Layer");
+        if (layer < 0)
+            return false;
+
+        if (animator.IsInTransition(layer))
+        {
+            if (animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0"))
+                return true;
+            if (animator.GetNextAnimatorStateInfo(layer).IsName("Attack 0"))
+                return true;
+        }
+
+        return animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0");
     }
 
     void HitFaintedTickToy()
     {
-        if (move.IsDead || !animator.GetCurrentAnimatorStateInfo(0).IsName("Attack"))
+        if (!IsSwinging())
             return;
 
         Vector3 origin = transform.position + transform.forward * 0.7f + Vector3.up * 0.8f;
@@ -81,9 +119,6 @@ public class WinderAnimation : MonoBehaviour
 
     void Jump()
     {
-        if (move.IsDead)
-            return;
-
         AnimatorStateInfo state =
             animator.GetCurrentAnimatorStateInfo(0);
 

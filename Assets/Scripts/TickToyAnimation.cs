@@ -41,16 +41,16 @@ public class TickToyAnimation : MonoBehaviour
             animator.SetTrigger("Die");
         }
 
-        if (move.IsDead)
-            return;
-
-        if (move.IsFainted)
+        switch (move.State)
         {
-            animator.SetBool("IsWinding", false);
-            move.IsWinding = false;
-            SetSpineSpringsActive(false);
-            SetFaint(true);
-            return;
+            case TickToyMove.TickToyState.Dead:
+                return;
+            case TickToyMove.TickToyState.Faint:
+                animator.SetBool("IsWinding", false);
+                move.IsWinding = false;
+                SetSpineSpringsActive(false);
+                SetFaint(true);
+                return;
         }
 
         Jump();

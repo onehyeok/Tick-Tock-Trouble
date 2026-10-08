@@ -2,7 +2,14 @@ using UnityEngine;
 
 public class WinderMove : MonoBehaviour
 {
+    public enum WinderState
+    {
+        Play,
+        Dead
+    }
+
     public Vector2 MoveInput { get; private set; }
+    public WinderState State { get; private set; } = WinderState.Play;
 
     [SerializeField] private Transform cameraPivot;
 
@@ -18,14 +25,17 @@ public class WinderMove : MonoBehaviour
 
     private bool isGrounded = true;
     private bool isProne = false;
-    private bool isDead = false;
 
     public bool IsGrounded => isGrounded;
 
     public bool IsDead
     {
-        get { return isDead; }
-        set { isDead = value; }
+        get { return State == WinderState.Dead; }
+        set
+        {
+            if (value)
+                State = WinderState.Dead;
+        }
     }
 
     void Awake()
@@ -42,14 +52,18 @@ public class WinderMove : MonoBehaviour
 
     void Update()
     {
-        if (isDead)
-            return;
-
-        InputUpdate();
-        Prone();
-        Look();
-        Move();
-        UpdateMoveAnimation();
+        switch (State)
+        {
+            case WinderState.Dead:
+                return;
+            default:
+                InputUpdate();
+                Prone();
+                Look();
+                Move();
+                UpdateMoveAnimation();
+                return;
+        }
     }
 
     void InputUpdate()
