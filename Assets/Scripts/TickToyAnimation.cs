@@ -11,6 +11,8 @@ public class TickToyAnimation : MonoBehaviour
     private Transform rightUpperLeg;
     private Transform leftLowerLeg;
     private Transform rightLowerLeg;
+    private Vector3 modelRestLocal;
+    private bool modelShifted;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 18f;
@@ -133,11 +135,70 @@ public class TickToyAnimation : MonoBehaviour
 
     void LateUpdate()
     {
+        if (ShouldPlantFeet())
+        {
+            if (!modelShifted)
+            {
+                modelRestLocal = animator.transform.localPosition;
+                modelShifted = true;
+            }
+
+            PlantFeet();
+            return;
+        }
+
+        if (modelShifted)
+        {
+            animator.transform.localPosition = modelRestLocal;
+            modelShifted = false;
+        }
+
         if (leftUpperLeg == null || !animator.GetBool("IsWinding"))
             return;
 
         SpreadLeg(leftUpperLeg, leftLowerLeg, -animator.transform.right);
         SpreadLeg(rightUpperLeg, rightLowerLeg, animator.transform.right);
+    }
+
+    bool ShouldPlantFeet()
+    {
+        if (animator == null)
+            return false;
+
+        if (move.IsDead || move.IsFainted)
+            return IsInState("Die");
+
+        return animator.GetBool("IsProne") || IsInState("Prone");
+    }
+
+    void PlantFeet()
+    {
+        if (!animator.isHuman)
+            return;
+
+        Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        if (leftFoot == null || rightFoot == null)
+            return;
+
+        float footY = Mathf.Min(leftFoot.position.y, rightFoot.position.y);
+        Vector3 feet = (leftFoot.position + rightFoot.position) * 0.5f;
+        Vector3 origin = new Vector3(feet.x, footY + 2f, feet.z);
+        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 4f, ~0, QueryTriggerInteraction.Ignore);
+        float groundY = float.NegativeInfinity;
+        for (int i = 0; i < hits.Length; i++)
+        {
+            if (hits[i].collider.transform == transform || hits[i].collider.transform.IsChildOf(transform))
+                continue;
+            if (hits[i].point.y > groundY)
+                groundY = hits[i].point.y;
+        }
+
+        float gap = footY - groundY;
+        if (groundY == float.NegativeInfinity || Mathf.Abs(gap) <= 0.02f || Mathf.Abs(gap) > 1.2f)
+            return;
+
+        animator.transform.position -= Vector3.up * gap;
     }
 
     void SpreadLeg(Transform upperLeg, Transform lowerLeg, Vector3 outward)
