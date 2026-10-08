@@ -41,10 +41,13 @@ public class TickToyHud : MonoBehaviour
     private AbilityKind abilityKind;
     private int abilityLevel;
     private Text windLabel;
+    private Text stopPrompt;
     private Font displayFont;
 
     void Awake()
     {
+        TickToyMove.KeepOneAudioListener();
+        EnsureStopPrompt();
         ApplyFont();
         RefreshStatus();
 
@@ -61,6 +64,10 @@ public class TickToyHud : MonoBehaviour
 
     void Update()
     {
+        RefreshStopPrompt();
+        if (stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
+            GrantOrLevelFromStop();
+
         if (abilityLevel > 0 && PressedAbilityKey())
             ConsumeAbility();
 
@@ -209,6 +216,26 @@ public class TickToyHud : MonoBehaviour
         return false;
     }
 
+    public void GrantOrLevelFromStop()
+    {
+        if (abilityLevel >= 3)
+            return;
+
+        if (abilityLevel <= 0)
+        {
+            abilityKind = Random.Range(0, 2) == 0 ? AbilityKind.Run : AbilityKind.Faint;
+            abilityLevel = 1;
+        }
+        else
+            abilityLevel++;
+
+        windProgress = 0f;
+        if (windRoot != null)
+            windRoot.SetActive(false);
+        ShowAbility();
+        ApplyAbilityToToys();
+    }
+
     public void PresentAbility(int kind, int level)
     {
         abilityKind = kind == 2 ? AbilityKind.Faint : AbilityKind.Run;
@@ -226,6 +253,47 @@ public class TickToyHud : MonoBehaviour
     void ConsumeAbility()
     {
         ClearPresentedAbility();
+    }
+
+    void EnsureStopPrompt()
+    {
+        GameObject promptObject = new GameObject("StopWinderPrompt", typeof(RectTransform), typeof(Text));
+        promptObject.transform.SetParent(transform, false);
+
+        RectTransform rect = promptObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.62f);
+        rect.anchorMax = new Vector2(0.5f, 0.62f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(1100f, 80f);
+
+        stopPrompt = promptObject.GetComponent<Text>();
+        stopPrompt.alignment = TextAnchor.MiddleCenter;
+        stopPrompt.fontSize = 36;
+        stopPrompt.color = Color.white;
+        stopPrompt.horizontalOverflow = HorizontalWrapMode.Overflow;
+        stopPrompt.verticalOverflow = VerticalWrapMode.Overflow;
+        stopPrompt.text = "E를 눌러 와인더를 정지시키세요!";
+        promptObject.SetActive(false);
+    }
+
+    void RefreshStopPrompt()
+    {
+        if (stopPrompt == null)
+            return;
+
+        stopPrompt.gameObject.SetActive(IsAnyTickToyNearWinder());
+    }
+
+    bool IsAnyTickToyNearWinder()
+    {
+        TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < toys.Length; i++)
+        {
+            if (!toys[i].IsDead && toys[i].FindWinderInReach() != null)
+                return true;
+        }
+
+        return false;
     }
 
     void ShowEmptyAbility()

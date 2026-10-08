@@ -37,6 +37,21 @@ public class WinderMove : MonoBehaviour
     private float runTimeLeft;
     private float faintTimeLeft;
     private bool faintCanBreak;
+    private bool faintOnGround;
+    private float freezeTimeLeft;
+    private bool freezeHeldBody;
+
+    public bool IsFrozen => freezeTimeLeft > 0f;
+
+    public Transform Spring
+    {
+        get
+        {
+            if (spring == null)
+                CacheSpring();
+            return spring;
+        }
+    }
     private TickToyHud hud;
 
     public bool IsGrounded => isGrounded;
@@ -57,6 +72,7 @@ public class WinderMove : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         bodyCollider = GetComponent<Collider>();
         CacheSpring();
+        TickToyMove.KeepOneAudioListener();
     }
 
     void Start()
@@ -148,10 +164,54 @@ public class WinderMove : MonoBehaviour
         return false;
     }
 
-    void Update()
+    public void Freeze(float seconds)
     {
         if (State == WinderState.Dead)
             return;
+
+        freezeTimeLeft = seconds;
+        if (animationController != null)
+            animationController.SetPaused(true);
+
+        if (rb != null && !rb.isKinematic)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            freezeHeldBody = true;
+        }
+    }
+
+    void EndFreeze()
+    {
+        freezeTimeLeft = 0f;
+        if (animationController != null)
+            animationController.SetPaused(false);
+
+        if (!freezeHeldBody || rb == null)
+            return;
+
+        freezeHeldBody = false;
+        if (State != WinderState.Faint && State != WinderState.Dead)
+            rb.isKinematic = false;
+    }
+
+    void Update()
+    {
+        if (State == WinderState.Dead)
+        {
+            if (IsFrozen)
+                EndFreeze();
+            return;
+        }
+
+        if (freezeTimeLeft > 0f)
+        {
+            freezeTimeLeft -= Time.deltaTime;
+            if (freezeTimeLeft <= 0f)
+                EndFreeze();
+            return;
+        }
 
         InputUpdate();
         if (PressedAbilityKey())
@@ -176,6 +236,9 @@ public class WinderMove : MonoBehaviour
 
     void LateUpdate()
     {
+        if (IsFrozen)
+            return;
+
         if (State == WinderState.Faint)
             faintCanBreak = true;
 
@@ -263,7 +326,11 @@ public class WinderMove : MonoBehaviour
 
         State = WinderState.Faint;
         faintCanBreak = false;
-        SetBodySolid(false);
+        faintOnGround = FeetNearGround();
+        if (faintOnGround)
+            SetBodySolid(false);
+        else if (rb != null)
+            rb.useGravity = true;
         if (level <= 1)
             faintTimeLeft = 10f;
         else if (level == 2)
@@ -276,6 +343,12 @@ public class WinderMove : MonoBehaviour
 
     void TickFaint()
     {
+        if (!faintOnGround && FeetNearGround())
+        {
+            faintOnGround = true;
+            SetBodySolid(false);
+        }
+
         if (faintCanBreak && PressedMoveKeyDown())
             BreakFaint();
         else if (faintTimeLeft >= 0f)
@@ -338,7 +411,6 @@ public class WinderMove : MonoBehaviour
     void Prone()
     {
         isProne = Input.GetKey(KeyCode.Z);
-
         animationController.SetProne(isProne);
     }
 
@@ -355,7 +427,47 @@ public class WinderMove : MonoBehaviour
         float currentSpeed = runTimeLeft > 0f ? moveSpeed * 2f : moveSpeed;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
+
+        if (!FeetNearGround() && rb != null && !rb.isKinematic)
+        {
+            rb.useGravity = true;
+            Vector3 velocity = rb.linearVelocity;
+            if (dir.sqrMagnitude > 0.0001f)
+            {
+                Vector3 flat = dir.normalized * currentSpeed;
+                velocity.x = flat.x;
+                velocity.z = flat.z;
+            }
+            rb.linearVelocity = velocity;
+            return;
+        }
+
+        if (dir.sqrMagnitude < 0.0001f)
+            return;
+
         transform.position += dir.normalized * currentSpeed * Time.deltaTime;
+    }
+
+    bool FeetNearGround()
+    {
+        Vector3 origin = transform.position + Vector3.up * 0.2f;
+        float distance = 0.55f;
+        if (bodyCollider != null && bodyCollider.enabled)
+        {
+            origin = new Vector3(bodyCollider.bounds.center.x, bodyCollider.bounds.min.y + 0.25f, bodyCollider.bounds.center.z);
+            distance = 0.6f;
+        }
+
+        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, distance, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Transform hit = hits[i].collider.transform;
+            if (hit == transform || hit.IsChildOf(transform))
+                continue;
+            return true;
+        }
+
+        return false;
     }
 
     void Look()

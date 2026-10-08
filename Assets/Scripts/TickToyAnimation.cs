@@ -58,7 +58,12 @@ public class TickToyAnimation : MonoBehaviour
 
         if (Input.GetKeyDown(KeyCode.E))
         {
+            WinderMove winder = move.FindWinderInReach();
+            if (winder == null)
+                return;
+
             animator.SetTrigger("WindPause");
+            winder.Freeze(5f);
         }
     }
 
@@ -156,6 +161,24 @@ public class TickToyAnimation : MonoBehaviour
     public void SetProne(bool isProne)
     {
         animator.SetBool("IsProne", isProne);
+    }
+
+    public bool IsProneSettled()
+    {
+        if (animator.IsInTransition(0))
+            return false;
+
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+        return state.IsName("Prone") && state.normalizedTime >= 1f;
+    }
+
+    public bool IsFaintSettled()
+    {
+        if (animator.IsInTransition(0))
+            return false;
+
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+        return state.IsName("Die") && state.normalizedTime >= 1f;
     }
 
     void Jump()

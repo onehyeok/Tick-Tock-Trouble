@@ -44,12 +44,76 @@ public class TickToyMove : MonoBehaviour
 
     private bool isGrounded = true;
     private bool isProne = false;
+    private bool pronePlaying;
     private float runTimeLeft;
     private bool faintCanBreak;
+    private bool faintOnGround;
     private float faintTimeLeft;
     private int grantedAbility;
     private int grantedLevel;
     private float abilityDuration;
+
+    public WinderMove FindWinderInReach()
+    {
+        if (IsFainted)
+            return null;
+
+        if (cameraPivot == null)
+            EnsureTpsCamera();
+        if (cameraPivot == null)
+            return null;
+
+        Vector3 look = cameraPivot.forward;
+        if (look.sqrMagnitude < 0.0001f)
+            return null;
+        look.Normalize();
+
+        const float reach = 2.4f;
+        WinderMove[] winders = FindObjectsByType<WinderMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        WinderMove closest = null;
+        float closestDistance = reach;
+        for (int i = 0; i < winders.Length; i++)
+        {
+            Transform spring = winders[i].Spring;
+            if (winders[i].IsDead || spring == null)
+                continue;
+
+            Vector3 toSpringFlat = spring.position - transform.position;
+            toSpringFlat.y = 0f;
+            float distance = toSpringFlat.magnitude;
+            if (distance > reach || distance < 0.05f)
+                continue;
+
+            Vector3 back = spring.position - winders[i].transform.position;
+            back.y = 0f;
+            if (back.sqrMagnitude < 0.0004f)
+            {
+                back = -winders[i].transform.forward;
+                back.y = 0f;
+            }
+
+            if (back.sqrMagnitude < 0.0001f)
+                continue;
+            back.Normalize();
+
+            Vector3 fromWinder = transform.position - winders[i].transform.position;
+            fromWinder.y = 0f;
+            if (fromWinder.sqrMagnitude < 0.0001f || Vector3.Dot(fromWinder.normalized, back) < 0.45f)
+                continue;
+
+            Vector3 toSpring = spring.position - cameraPivot.position;
+            if (toSpring.sqrMagnitude < 0.0001f || Vector3.Angle(look, toSpring) > 34f)
+                continue;
+
+            if (distance >= closestDistance)
+                continue;
+
+            closestDistance = distance;
+            closest = winders[i];
+        }
+
+        return closest;
+    }
 
     public bool IsFainted => State == TickToyState.Faint;
     public bool IsUsingAbility => State == TickToyState.Run || State == TickToyState.Faint || runTimeLeft > 0f;
@@ -76,6 +140,30 @@ public class TickToyMove : MonoBehaviour
         if (rb != null)
             rb.constraints = RigidbodyConstraints.FreezeRotation;
         EnsureTpsCamera();
+        KeepOneAudioListener();
+    }
+
+    public static void KeepOneAudioListener()
+    {
+        AudioListener[] listeners = FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        AudioListener keep = null;
+        for (int i = 0; i < listeners.Length; i++)
+        {
+            if (listeners[i] != null && listeners[i].gameObject.activeInHierarchy)
+            {
+                keep = listeners[i];
+                break;
+            }
+        }
+
+        if (keep == null && listeners.Length > 0)
+            keep = listeners[0];
+
+        for (int i = 0; i < listeners.Length; i++)
+        {
+            if (listeners[i] != null)
+                listeners[i].enabled = listeners[i] == keep;
+        }
     }
 
     void Start()
@@ -127,7 +215,13 @@ public class TickToyMove : MonoBehaviour
 
     void TickFaint()
     {
-        if (faintCanBreak && PressedMoveKeyDown())
+        if (!faintOnGround && FeetNearGround())
+        {
+            faintOnGround = true;
+            SetBodySolid(false);
+        }
+
+        if (animationController.IsFaintSettled() && MoveInput.sqrMagnitude > 0.01f)
             BreakFaint();
         else if (faintTimeLeft >= 0f)
         {
@@ -165,10 +259,23 @@ public class TickToyMove : MonoBehaviour
 
     void Prone()
     {
-        isProne = Input.GetKey(KeyCode.Z);
+        bool proneKey = Input.GetKey(KeyCode.Z);
+        if (proneKey)
+            pronePlaying = true;
 
+        if (pronePlaying && !animationController.IsProneSettled())
+        {
+            isProne = true;
+            animationController.SetProne(true);
+            animationController.SetMove(false);
+            return;
+        }
+
+        if (pronePlaying && (MoveInput.sqrMagnitude > 0.01f || !proneKey))
+            pronePlaying = false;
+
+        isProne = pronePlaying;
         animationController.SetProne(isProne);
-
     }
 
     void Move(float speedScale)
@@ -398,7 +505,11 @@ public class TickToyMove : MonoBehaviour
 
         State = TickToyState.Faint;
         faintCanBreak = false;
-        SetBodySolid(false);
+        faintOnGround = FeetNearGround();
+        if (faintOnGround)
+            SetBodySolid(false);
+        else if (rb != null)
+            rb.useGravity = true;
         if (level <= 1)
             abilityDuration = 10f;
         else if (level == 2)
@@ -427,6 +538,28 @@ public class TickToyMove : MonoBehaviour
 
         State = TickToyState.Dead;
         SetBodySolid(false);
+    }
+
+    bool FeetNearGround()
+    {
+        Vector3 origin = transform.position + Vector3.up * 0.2f;
+        float distance = 0.55f;
+        if (bodyCollider != null && bodyCollider.enabled)
+        {
+            origin = new Vector3(bodyCollider.bounds.center.x, bodyCollider.bounds.min.y + 0.25f, bodyCollider.bounds.center.z);
+            distance = 0.6f;
+        }
+
+        RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, distance, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Transform hit = hits[i].collider.transform;
+            if (hit == transform || hit.IsChildOf(transform))
+                continue;
+            return true;
+        }
+
+        return false;
     }
 
     void SetBodySolid(bool solid)

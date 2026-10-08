@@ -16,8 +16,24 @@ public class WinderAnimation : MonoBehaviour
         move = GetComponent<WinderMove>();
     }
 
+    public void SetPaused(bool paused)
+    {
+        if (animator != null)
+            animator.speed = paused ? 0f : 1f;
+    }
+
     void Update()
     {
+        if (move.IsFrozen)
+        {
+            if (Input.GetKeyDown(KeyCode.K))
+            {
+                move.IsDead = true;
+                animator.SetTrigger("Die");
+            }
+            return;
+        }
+
         switch (move.State)
         {
             case WinderMove.WinderState.Dead:
