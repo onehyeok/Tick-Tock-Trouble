@@ -17,10 +17,15 @@ public class TickToyMove : MonoBehaviour
 
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
-    private const float CameraDistanceScale = 0.62f;
-    private const float CameraLiftScale = 0.22f;
-    private const float CameraPitchScale = 0.28f;
-    private const float CameraLookAheadScale = 0.4f;
+    [Tooltip("뒤로 빠지는 거리. 크면 멀어지고, 캐릭터가 안 보이면 줄이세요.")]
+    [SerializeField] private float cameraDistance = 0.95f;
+    [Tooltip("카메라 높이. 크면 위에서 내려다봅니다.")]
+    [SerializeField] private float cameraHeight = 0.3f;
+    [Tooltip("앞을 보는 정도. 크면 캐릭터가 화면 위로 밀려납니다.")]
+    [SerializeField] private float cameraLookAhead = 0.2f;
+    [Tooltip("시작할 때 위아래 각도.")]
+    [SerializeField] private float cameraStartPitch = 12f;
+    private const float CameraPitchScale = 0.22f;
     private const float MinCameraPitch = -20f;
     private const float MaxCameraPitch = 45f;
     private const float FixedFieldOfView = 78f;
@@ -31,7 +36,7 @@ public class TickToyMove : MonoBehaviour
     [SerializeField] private float proneMoveSpeedMultiplier = 0.5f;
     [SerializeField] private float sensitivity = 200f;
 
-    private float cameraPitch = 15f;
+    private float cameraPitch;
     private Rigidbody rb;
     private Collider bodyCollider;
     private Camera tpsCamera;
@@ -174,6 +179,7 @@ public class TickToyMove : MonoBehaviour
         yaw = flat.sqrMagnitude > 0.0001f
             ? Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg
             : transform.eulerAngles.y;
+        cameraPitch = cameraStartPitch;
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
     }
@@ -343,15 +349,13 @@ public class TickToyMove : MonoBehaviour
         float pitchRadians = cameraPitch * Mathf.Deg2Rad;
         Vector3 focus = transform.TransformPoint(bodyRestLocalPosition) + Vector3.up * focusHeight;
         Vector3 desired = focus
-            - forward * (bodyHeight * CameraDistanceScale * Mathf.Cos(pitchRadians))
-            + Vector3.up * (bodyHeight * CameraLiftScale + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
-        Vector3 lookTarget = focus + forward * (bodyHeight * CameraLookAheadScale);
+            - forward * (bodyHeight * cameraDistance * Mathf.Cos(pitchRadians))
+            + Vector3.up * (bodyHeight * cameraHeight + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
+        Vector3 lookTarget = focus + forward * (bodyHeight * cameraLookAhead);
 
         cameraPivot.position = desired;
 
         Vector3 look = lookTarget - desired;
-        look.x = forward.x;
-        look.z = forward.z;
         if (look.sqrMagnitude < 0.0001f)
             return;
 
