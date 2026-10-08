@@ -108,14 +108,6 @@ public class TickToyMove : MonoBehaviour
         if (isFainted)
         {
             animationController.SetFaint(true);
-            if (rb != null)
-            {
-                rb.angularVelocity = Vector3.zero;
-                Vector3 velocity = rb.linearVelocity;
-                velocity.x = 0f;
-                velocity.z = 0f;
-                rb.linearVelocity = velocity;
-            }
             return;
         }
 
@@ -164,7 +156,7 @@ public class TickToyMove : MonoBehaviour
         if (dir.sqrMagnitude > 0.0001f)
             dir.Normalize();
 
-        float currentSpeed = runAbilityActive ? moveSpeed * 1.4f : moveSpeed;
+        float currentSpeed = runAbilityActive ? moveSpeed * 2f : moveSpeed;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
 
@@ -242,9 +234,11 @@ public class TickToyMove : MonoBehaviour
             return;
 
         rb.constraints = RigidbodyConstraints.FreezeRotation;
+        if (rb.isKinematic)
+            return;
+
         rb.angularVelocity = Vector3.zero;
-        if (!rb.isKinematic)
-            rb.rotation = rotation;
+        rb.rotation = rotation;
     }
 
     void CacheBodyFrame()
