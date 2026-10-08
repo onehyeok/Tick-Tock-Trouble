@@ -64,6 +64,88 @@ public class WinderMove : MonoBehaviour
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.Locked;
         hud = FindAnyObjectByType<TickToyHud>();
+        HideBodyFromOwnCamera();
+        PlaceFpsCamera();
+    }
+
+    void PlaceFpsCamera()
+    {
+        if (cameraPivot == null)
+            return;
+
+        Transform head = FindChildNamed("Head");
+        if (head != null && cameraPivot.parent != null)
+        {
+            Vector3 eye = cameraPivot.parent.InverseTransformPoint(head.position);
+            eye.x = -0.04f;
+            cameraPivot.localPosition = eye;
+        }
+
+        Camera fpsCamera = cameraPivot.GetComponent<Camera>();
+        if (fpsCamera == null)
+            return;
+
+        fpsCamera.nearClipPlane = 0.02f;
+        fpsCamera.fieldOfView = 70f;
+    }
+
+    Transform FindChildNamed(string childName)
+    {
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i].name == childName)
+                return transforms[i];
+        }
+
+        return null;
+    }
+
+    void HideBodyFromOwnCamera()
+    {
+        if (cameraPivot == null)
+            return;
+
+        Camera fpsCamera = cameraPivot.GetComponent<Camera>();
+        int hiddenLayer = LayerMask.NameToLayer("FirstPersonBody");
+        if (fpsCamera == null || hiddenLayer < 0)
+            return;
+
+        SkinnedMeshRenderer[] meshes = GetComponentsInChildren<SkinnedMeshRenderer>(true);
+        for (int i = 0; i < meshes.Length; i++)
+        {
+            if (IsWeaponOrSpring(meshes[i].transform))
+                continue;
+
+            meshes[i].gameObject.layer = hiddenLayer;
+        }
+
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (!transforms[i].name.StartsWith("Spring"))
+                continue;
+
+            Renderer[] renderers = transforms[i].GetComponentsInChildren<Renderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+                renderers[r].gameObject.layer = hiddenLayer;
+        }
+
+        fpsCamera.cullingMask &= ~(1 << hiddenLayer);
+    }
+
+    bool IsWeaponOrSpring(Transform target)
+    {
+        Transform current = target;
+        while (current != null && current != transform)
+        {
+            if (current.name.StartsWith("BrickWeapon") || current.name.StartsWith("Spring"))
+                return true;
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     void Update()
