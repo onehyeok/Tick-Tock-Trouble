@@ -468,7 +468,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &264380222
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -510,6 +510,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyMove
   cameraPivot: {fileID: 1339367176}
+  cameraDistance: 0.95
+  cameraHeight: 0.3
+  cameraLookAhead: 0.2
+  cameraStartPitch: 12
   moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
@@ -954,7 +958,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &446550519
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -996,6 +1000,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyMove
   cameraPivot: {fileID: 2055279663}
+  cameraDistance: 0.95
+  cameraHeight: 0.3
+  cameraLookAhead: 0.2
+  cameraStartPitch: 12
   moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
@@ -1248,6 +1256,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyMove
   cameraPivot: {fileID: 1810379909}
+  cameraDistance: 0.95
+  cameraHeight: 0.3
+  cameraLookAhead: 0.2
+  cameraStartPitch: 12
   moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
@@ -1796,6 +1808,28 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!64 &1117403040
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1117403037}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 0}
 --- !u!1001 &1144021751
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2684,6 +2718,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fa791c9f75eddad49958c3d24247a200, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1117403039}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: fa791c9f75eddad49958c3d24247a200, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1117403040}
   m_SourcePrefab: {fileID: 100100000, guid: fa791c9f75eddad49958c3d24247a200, type: 3}
 --- !u!4 &1605805725 stripped
 Transform:
@@ -2967,7 +3004,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1958237090
 Transform:
   m_ObjectHideFlags: 0
@@ -3147,6 +3184,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyMove
   cameraPivot: {fileID: 1379566901}
+  cameraDistance: 0.95
+  cameraHeight: 0.3
+  cameraLookAhead: 0.2
+  cameraStartPitch: 12
   moveSpeed: 5
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
@@ -3207,7 +3248,7 @@ Transform:
   m_GameObject: {fileID: 1982653564}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.96, y: 0, z: 9.79}
+  m_LocalPosition: {x: -2.96, y: 0, z: 14.1856}
   m_LocalScale: {x: 1.8, y: 1.8, z: 1.8}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -3342,6 +3383,18 @@ PrefabInstance:
     m_TransformParent: {fileID: 1982653569}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
       objectReference: {fileID: 0}
@@ -3351,7 +3404,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 2.442
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2754620d4abca694ab47f39583dc1d9d, type: 3}
       propertyPath: m_LocalRotation.w
