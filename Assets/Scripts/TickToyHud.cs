@@ -209,11 +209,23 @@ public class TickToyHud : MonoBehaviour
         return false;
     }
 
-    void ConsumeAbility()
+    public void PresentAbility(int kind, int level)
+    {
+        abilityKind = kind == 2 ? AbilityKind.Faint : AbilityKind.Run;
+        abilityLevel = Mathf.Clamp(level, 1, 3);
+        ShowAbility();
+    }
+
+    public void ClearPresentedAbility()
     {
         abilityLevel = 0;
         abilityKind = AbilityKind.None;
         ShowEmptyAbility();
+    }
+
+    void ConsumeAbility()
+    {
+        ClearPresentedAbility();
     }
 
     void ShowEmptyAbility()

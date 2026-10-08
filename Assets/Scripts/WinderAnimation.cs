@@ -22,6 +22,9 @@ public class WinderAnimation : MonoBehaviour
         {
             case WinderMove.WinderState.Dead:
                 break;
+            case WinderMove.WinderState.Faint:
+                SetFaint(true);
+                break;
             default:
                 Attack();
                 HitFaintedTickToy();
@@ -51,6 +54,27 @@ public class WinderAnimation : MonoBehaviour
     public void SetProne(bool isProne)
     {
         animator.SetBool("IsProne", isProne);
+    }
+
+    public void SetFaint(bool faint)
+    {
+        if (faint)
+        {
+            if (!IsInState("Die"))
+                animator.CrossFadeInFixedTime("Die", 0.1f, 0, 0f);
+            return;
+        }
+
+        if (!move.IsDead && IsInState("Die"))
+            animator.CrossFadeInFixedTime("Idle", 0.15f, 0);
+    }
+
+    bool IsInState(string stateName)
+    {
+        if (animator.IsInTransition(0))
+            return animator.GetNextAnimatorStateInfo(0).IsName(stateName);
+
+        return animator.GetCurrentAnimatorStateInfo(0).IsName(stateName);
     }
 
     void Attack()
