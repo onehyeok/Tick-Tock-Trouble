@@ -26,6 +26,13 @@ public class WinderMove : MonoBehaviour
     private Transform spine;
     private Transform chest;
     private Transform aimArm;
+    private Transform aimLower;
+    private Transform aimHand;
+    private Quaternion holdUpper;
+    private Quaternion holdLower;
+    private Quaternion holdHand;
+    private bool holdReady;
+    private bool aimLeft;
     private Rigidbody rb;
     private float JumpPower = 6f;
 
@@ -288,15 +295,41 @@ public class WinderMove : MonoBehaviour
         }
 
         Transform leftHand = bodyAnimator.GetBoneTransform(HumanBodyBones.LeftHand);
-        aimArm = weapon != null && leftHand != null && weapon.IsChildOf(leftHand)
-            ? bodyAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm)
-            : bodyAnimator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+        aimLeft = weapon != null && leftHand != null && weapon.IsChildOf(leftHand);
+        if (aimLeft)
+        {
+            aimArm = bodyAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+            aimLower = bodyAnimator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+            aimHand = leftHand;
+        }
+        else
+        {
+            aimArm = bodyAnimator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            aimLower = bodyAnimator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+            aimHand = bodyAnimator.GetBoneTransform(HumanBodyBones.RightHand);
+        }
+    }
+
+    void CacheHoldPose()
+    {
+        if (holdReady || aimArm == null || aimLower == null || aimHand == null)
+            return;
+        if (isProne || MoveInput.sqrMagnitude > 0.01f || IsAttacking())
+            return;
+
+        holdUpper = aimArm.localRotation;
+        holdLower = aimLower.localRotation;
+        holdHand = aimHand.localRotation;
+        holdReady = true;
     }
 
     void AimArmsWithLook()
     {
         if (State == WinderState.Faint || State == WinderState.Dead)
             return;
+
+        CacheHoldPose();
+        HoldWeaponArm();
 
         Vector3 axis = transform.right;
         if (spine != null)
@@ -305,6 +338,32 @@ public class WinderMove : MonoBehaviour
             chest.Rotate(axis, xRotation * 0.35f, Space.World);
         if (aimArm != null)
             aimArm.Rotate(axis, xRotation * 0.3f, Space.World);
+    }
+
+    void HoldWeaponArm()
+    {
+        if (!holdReady || isProne || IsAttacking())
+            return;
+
+        aimArm.localRotation = holdUpper;
+        aimLower.localRotation = holdLower;
+        aimHand.localRotation = holdHand;
+        aimArm.Rotate(transform.right, -70f, Space.World);
+        aimArm.Rotate(transform.up, aimLeft ? 18f : -18f, Space.World);
+    }
+
+    bool IsAttacking()
+    {
+        if (bodyAnimator == null)
+            return false;
+
+        int layer = bodyAnimator.GetLayerIndex("Attack Layer");
+        if (layer < 0)
+            return false;
+
+        if (bodyAnimator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0"))
+            return true;
+        return bodyAnimator.IsInTransition(layer) && bodyAnimator.GetNextAnimatorStateInfo(layer).IsName("Attack 0");
     }
 
     void CacheSpring()
