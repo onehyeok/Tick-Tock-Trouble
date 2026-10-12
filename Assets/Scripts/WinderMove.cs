@@ -22,6 +22,10 @@ public class WinderMove : MonoBehaviour
     private float sensitivity = 200f;
 
     private float xRotation;
+    private Animator bodyAnimator;
+    private Transform spine;
+    private Transform chest;
+    private Transform aimArm;
     private Rigidbody rb;
     private float JumpPower = 6f;
 
@@ -84,6 +88,7 @@ public class WinderMove : MonoBehaviour
         hud = FindAnyObjectByType<TickToyHud>();
         HideBodyFromOwnCamera();
         PlaceFpsCamera();
+        CacheAimBones();
     }
 
     void PlaceFpsCamera()
@@ -260,6 +265,46 @@ public class WinderMove : MonoBehaviour
             faintCanBreak = true;
 
         TickSpring();
+        AimArmsWithLook();
+    }
+
+    void CacheAimBones()
+    {
+        bodyAnimator = GetComponentInChildren<Animator>();
+        if (bodyAnimator == null || !bodyAnimator.isHuman)
+            return;
+
+        spine = bodyAnimator.GetBoneTransform(HumanBodyBones.Spine);
+        chest = bodyAnimator.GetBoneTransform(HumanBodyBones.Chest);
+
+        Transform weapon = null;
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (!transforms[i].name.StartsWith("BrickWeapon"))
+                continue;
+            weapon = transforms[i];
+            break;
+        }
+
+        Transform leftHand = bodyAnimator.GetBoneTransform(HumanBodyBones.LeftHand);
+        aimArm = weapon != null && leftHand != null && weapon.IsChildOf(leftHand)
+            ? bodyAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm)
+            : bodyAnimator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+    }
+
+    void AimArmsWithLook()
+    {
+        if (State == WinderState.Faint || State == WinderState.Dead)
+            return;
+
+        Vector3 axis = transform.right;
+        if (spine != null)
+            spine.Rotate(axis, xRotation * 0.35f, Space.World);
+        if (chest != null)
+            chest.Rotate(axis, xRotation * 0.35f, Space.World);
+        if (aimArm != null)
+            aimArm.Rotate(axis, xRotation * 0.3f, Space.World);
     }
 
     void CacheSpring()
