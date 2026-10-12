@@ -45,10 +45,16 @@ public class TickToyMove : MonoBehaviour
     private float bodyHeight = 2.2f;
     private float focusHeight = 1.1f;
     private float yaw;
-    private float JumpPower = 8f;
+    private float JumpPower = 5.5f;
 
     private bool isGrounded = true;
+    private bool leftGround;
+    private float restTime;
     private float jumpLock;
+    private Collider stepIgnored;
+    private float vaultTopY;
+    private float stepIgnoreUntil;
+    private static readonly Collider[] StepHits = new Collider[8];
     private static readonly RaycastHit[] GroundHits = new RaycastHit[8];
     private bool isProne = false;
     private float runTimeLeft;
@@ -127,6 +133,7 @@ public class TickToyMove : MonoBehaviour
     public float AbilityTimeLeft => runTimeLeft > 0f ? runTimeLeft : faintTimeLeft;
 
     public bool IsGrounded => isGrounded;
+    public bool CanJump => jumpLock <= 0f && !leftGround;
 
     public bool IsDead
     {
@@ -188,16 +195,42 @@ public class TickToyMove : MonoBehaviour
     void FixedUpdate()
     {
         if (rb != null && rb.isKinematic)
+        {
+            ReleaseStep();
             return;
+        }
 
         if (jumpLock > 0f)
         {
             jumpLock -= Time.fixedDeltaTime;
             isGrounded = false;
+            leftGround = true;
+            KeepStep();
             return;
         }
 
         isGrounded = ProbeGround();
+        if (isGrounded)
+        {
+            leftGround = false;
+            restTime = 0f;
+        }
+        else
+        {
+            float verticalSpeed = rb != null ? rb.linearVelocity.y : 0f;
+            if (Mathf.Abs(verticalSpeed) < 0.5f)
+            {
+                restTime += Time.fixedDeltaTime;
+                leftGround = restTime <= 0.12f;
+            }
+            else
+            {
+                restTime = 0f;
+                leftGround = true;
+            }
+        }
+
+        KeepStep();
     }
 
     void Update()
@@ -281,7 +314,7 @@ public class TickToyMove : MonoBehaviour
 
     void Prone()
     {
-        isProne = Input.GetKey(KeyCode.Z);
+        isProne = Input.GetKey(KeyCode.LeftControl);
         animationController.SetProne(isProne);
     }
 
@@ -589,17 +622,122 @@ public class TickToyMove : MonoBehaviour
 
     public void Jump()
     {
-        if (!isGrounded || rb == null || rb.isKinematic)
+        if (rb == null || rb.isKinematic || !CanJump)
             return;
 
+        float speedScale = State == TickToyState.Run ? 2f : 1f;
+        Vector3 planar = PlanarVelocity(speedScale);
+        Vector3 dir = planar.sqrMagnitude > 0.01f ? planar.normalized : FlatForward();
+        Collider step = null;
+        bool climb = FindClimbableStep(dir, out step);
+        if (climb && planar.sqrMagnitude < 0.01f)
+        {
+            float speed = moveSpeed * speedScale;
+            if (isProne)
+                speed *= proneMoveSpeedMultiplier;
+            planar = dir * speed;
+        }
+
+        if (climb && bodyCollider != null)
+        {
+            ReleaseStep();
+            Physics.IgnoreCollision(bodyCollider, step, true);
+            stepIgnored = step;
+            vaultTopY = step.bounds.max.y;
+            stepIgnoreUntil = Time.time + 0.5f;
+        }
+
         Vector3 velocity = rb.linearVelocity;
-        Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
         velocity.x = planar.x;
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
+        rb.angularVelocity = Vector3.zero;
         isGrounded = false;
+        leftGround = true;
+        restTime = 0f;
         jumpLock = 0.12f;
+    }
+
+    Vector3 FlatForward()
+    {
+        Vector3 forward = transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            return Vector3.forward;
+        return forward.normalized;
+    }
+
+    void KeepStep()
+    {
+        if (stepIgnored == null || bodyCollider == null)
+            return;
+
+        bool feetClear = bodyCollider.bounds.min.y >= vaultTopY - 0.05f;
+        bool falling = rb != null && rb.linearVelocity.y < -0.2f;
+        if (feetClear || falling || Time.time >= stepIgnoreUntil)
+            ReleaseStep();
+    }
+
+    void ReleaseStep()
+    {
+        if (stepIgnored != null && bodyCollider != null)
+        {
+            if (rb != null)
+                rb.angularVelocity = Vector3.zero;
+            Physics.IgnoreCollision(bodyCollider, stepIgnored, false);
+        }
+
+        stepIgnored = null;
+    }
+
+    void OnDisable()
+    {
+        ReleaseStep();
+    }
+
+    bool FindClimbableStep(Vector3 dir, out Collider step)
+    {
+        step = null;
+        if (bodyCollider == null || dir.sqrMagnitude < 0.01f)
+            return false;
+
+        float gravity = Mathf.Abs(Physics.gravity.y);
+        if (gravity < 0.01f)
+            gravity = 12f;
+        float jumpHeight = (JumpPower * JumpPower) / (2f * gravity);
+        float feet = bodyCollider.bounds.min.y;
+        float reach = bodyCollider.bounds.extents.x + bodyCollider.bounds.extents.z;
+        Vector3 center = bodyCollider.bounds.center + dir * (reach * 0.35f);
+        int count = Physics.OverlapBoxNonAlloc(center, bodyCollider.bounds.extents, StepHits, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+        float bestRise = float.MaxValue;
+        for (int i = 0; i < count; i++)
+        {
+            Collider hit = StepHits[i];
+            if (hit == null || hit == bodyCollider)
+                continue;
+
+            Transform hitTransform = hit.transform;
+            if (hitTransform == transform || hitTransform.IsChildOf(transform))
+                continue;
+
+            float rise = hit.bounds.max.y - feet;
+            if (rise < 0.08f || rise > jumpHeight + 0.15f)
+                continue;
+
+            Vector3 to = hit.bounds.center - bodyCollider.bounds.center;
+            to.y = 0f;
+            if (to.sqrMagnitude > 0.0001f && Vector3.Dot(to.normalized, dir) < 0.15f)
+                continue;
+
+            if (rise < bestRise)
+            {
+                bestRise = rise;
+                step = hit;
+            }
+        }
+
+        return step != null;
     }
 
     bool ProbeGround()

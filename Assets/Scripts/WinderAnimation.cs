@@ -163,7 +163,7 @@ public class WinderAnimation : MonoBehaviour
             animator.GetCurrentAnimatorStateInfo(0);
 
         if (Input.GetKey(KeyCode.Space)
-            && move.IsGrounded)
+            && move.CanJump)
         {
             if (!state.IsName("Jump"))
             {

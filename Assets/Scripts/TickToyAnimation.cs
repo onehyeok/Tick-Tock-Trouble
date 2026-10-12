@@ -94,7 +94,7 @@ public class TickToyAnimation : MonoBehaviour
     void UpdateWind()
     {
         bool isWinding =
-            Input.GetMouseButton(0) && !move.IsDead && move.MoveInput.sqrMagnitude < 0.01f && !Input.GetKey(KeyCode.Space) && !Input.GetKey(KeyCode.Z);
+            Input.GetMouseButton(0) && !move.IsDead && move.MoveInput.sqrMagnitude < 0.01f && !Input.GetKey(KeyCode.Space) && !Input.GetKey(KeyCode.LeftControl);
 
         animator.SetBool("IsWinding", isWinding);
         move.IsWinding = isWinding;
@@ -227,15 +227,6 @@ public class TickToyAnimation : MonoBehaviour
         animator.SetBool("IsProne", isProne);
     }
 
-    public bool IsProneSettled()
-    {
-        if (animator.IsInTransition(0))
-            return false;
-
-        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
-        return state.IsName("Prone") && state.normalizedTime >= 1f;
-    }
-
     public bool IsFaintSettled()
     {
         if (animator.IsInTransition(0))
@@ -254,7 +245,7 @@ public class TickToyAnimation : MonoBehaviour
             animator.GetCurrentAnimatorStateInfo(0);
 
         if (Input.GetKey(KeyCode.Space)
-            && move.IsGrounded)
+            && move.CanJump)
         {
             if (!state.IsName("Jump"))
             {
