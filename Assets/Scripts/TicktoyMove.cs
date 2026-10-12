@@ -45,9 +45,11 @@ public class TickToyMove : MonoBehaviour
     private float bodyHeight = 2.2f;
     private float focusHeight = 1.1f;
     private float yaw;
-    private float JumpPower = 4.5f;
+    private float JumpPower = 8f;
 
     private bool isGrounded = true;
+    private float jumpLock;
+    private static readonly RaycastHit[] GroundHits = new RaycastHit[8];
     private bool isProne = false;
     private float runTimeLeft;
     private bool faintCanBreak;
@@ -183,6 +185,21 @@ public class TickToyMove : MonoBehaviour
         Cursor.lockState = CursorLockMode.Locked;
     }
 
+    void FixedUpdate()
+    {
+        if (rb != null && rb.isKinematic)
+            return;
+
+        if (jumpLock > 0f)
+        {
+            jumpLock -= Time.fixedDeltaTime;
+            isGrounded = false;
+            return;
+        }
+
+        isGrounded = ProbeGround();
+    }
+
     void Update()
     {
         if (State == TickToyState.Dead)
@@ -268,37 +285,48 @@ public class TickToyMove : MonoBehaviour
         animationController.SetProne(isProne);
     }
 
-    void Move(float speedScale)
+    Vector3 PlanarVelocity(float speedScale)
     {
         Vector3 forward = transform.forward;
         forward.y = 0f;
         if (forward.sqrMagnitude < 0.0001f)
-            return;
+            return Vector3.zero;
 
         forward.Normalize();
         Vector3 right = Vector3.Cross(Vector3.up, forward);
         Vector3 dir = forward * MoveInput.y + right * MoveInput.x;
-        if (dir.sqrMagnitude > 0.0001f)
-            dir.Normalize();
+        if (dir.sqrMagnitude < 0.0001f)
+            return Vector3.zero;
 
+        dir.Normalize();
         float currentSpeed = moveSpeed * speedScale;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
+        return dir * currentSpeed;
+    }
 
+    void Move(float speedScale)
+    {
+        if (rb != null)
+            rb.angularVelocity = Vector3.zero;
+
+        if (!isGrounded)
+            return;
+
+        Vector3 planar = PlanarVelocity(speedScale);
         if (rb != null)
         {
-            rb.angularVelocity = Vector3.zero;
             Vector3 velocity = rb.linearVelocity;
-            velocity.x = dir.x * currentSpeed;
-            velocity.z = dir.z * currentSpeed;
+            velocity.x = planar.x;
+            velocity.z = planar.z;
             rb.linearVelocity = velocity;
             return;
         }
 
-        if (dir.sqrMagnitude < 0.0001f)
+        if (planar.sqrMagnitude < 0.0001f)
             return;
 
-        transform.position += dir.normalized * currentSpeed * Time.deltaTime;
+        transform.position += planar * Time.deltaTime;
     }
 
     void Look()
@@ -561,14 +589,37 @@ public class TickToyMove : MonoBehaviour
 
     public void Jump()
     {
-        if (isGrounded)
-        {
-            rb.AddForce(
-                Vector3.up * JumpPower,
-                ForceMode.Impulse);
+        if (!isGrounded || rb == null || rb.isKinematic)
+            return;
 
-            isGrounded = false;
+        Vector3 velocity = rb.linearVelocity;
+        Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+        velocity.x = planar.x;
+        velocity.z = planar.z;
+        velocity.y = JumpPower;
+        rb.linearVelocity = velocity;
+        isGrounded = false;
+        jumpLock = 0.12f;
+    }
+
+    bool ProbeGround()
+    {
+        if (bodyCollider == null || !bodyCollider.enabled)
+            return false;
+
+        Vector3 origin = new Vector3(bodyCollider.bounds.center.x, bodyCollider.bounds.min.y + 0.2f, bodyCollider.bounds.center.z);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, GroundHits, 0.35f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            Transform hit = GroundHits[i].collider.transform;
+            if (hit == transform || hit.IsChildOf(transform))
+                continue;
+            if (GroundHits[i].normal.y < 0.45f)
+                continue;
+            return true;
         }
+
+        return false;
     }
 
     void UpdateMoveAnimation()
@@ -586,12 +637,4 @@ public class TickToyMove : MonoBehaviour
         }
     }
 
-    private void OnCollisionEnter(Collision collision)
-    {
-        if (collision.gameObject.layer ==
-            LayerMask.NameToLayer("Ground"))
-        {
-            isGrounded = true;
-        }
-    }
 }
