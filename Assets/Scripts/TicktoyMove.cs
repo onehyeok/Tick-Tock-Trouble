@@ -49,7 +49,6 @@ public class TickToyMove : MonoBehaviour
 
     private bool isGrounded = true;
     private bool isProne = false;
-    private bool pronePlaying;
     private float runTimeLeft;
     private bool faintCanBreak;
     private bool faintOnGround;
@@ -265,22 +264,7 @@ public class TickToyMove : MonoBehaviour
 
     void Prone()
     {
-        bool proneKey = Input.GetKey(KeyCode.Z);
-        if (proneKey)
-            pronePlaying = true;
-
-        if (pronePlaying && !animationController.IsProneSettled())
-        {
-            isProne = true;
-            animationController.SetProne(true);
-            animationController.SetMove(false);
-            return;
-        }
-
-        if (pronePlaying && (MoveInput.sqrMagnitude > 0.01f || !proneKey))
-            pronePlaying = false;
-
-        isProne = pronePlaying;
+        isProne = Input.GetKey(KeyCode.Z);
         animationController.SetProne(isProne);
     }
 

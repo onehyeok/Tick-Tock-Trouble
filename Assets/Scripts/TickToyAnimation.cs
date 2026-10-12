@@ -168,6 +168,9 @@ public class TickToyAnimation : MonoBehaviour
         if (move.IsDead || move.IsFainted)
             return IsInState("Die");
 
+        if (!move.IsGrounded)
+            return false;
+
         return animator.GetBool("IsProne") || IsInState("Prone");
     }
 
