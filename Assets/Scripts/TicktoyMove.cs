@@ -51,6 +51,8 @@ public class TickToyMove : MonoBehaviour
     private bool leftGround;
     private float restTime;
     private float jumpLock;
+    private float jumpCooldown;
+    private bool jumped;
     private Collider stepIgnored;
     private float vaultTopY;
     private float stepIgnoreUntil;
@@ -133,7 +135,7 @@ public class TickToyMove : MonoBehaviour
     public float AbilityTimeLeft => runTimeLeft > 0f ? runTimeLeft : faintTimeLeft;
 
     public bool IsGrounded => isGrounded;
-    public bool CanJump => jumpLock <= 0f && !leftGround;
+    public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
     public bool IsDead
     {
@@ -194,6 +196,9 @@ public class TickToyMove : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (jumpCooldown > 0f)
+            jumpCooldown -= Time.fixedDeltaTime;
+
         if (rb != null && rb.isKinematic)
         {
             ReleaseStep();
@@ -209,9 +214,13 @@ public class TickToyMove : MonoBehaviour
             return;
         }
 
+        bool wasGrounded = isGrounded;
         isGrounded = ProbeGround();
         if (isGrounded)
         {
+            if (!wasGrounded && jumped)
+                jumpCooldown = 0.2f;
+            jumped = false;
             leftGround = false;
             restTime = 0f;
         }
@@ -656,6 +665,7 @@ public class TickToyMove : MonoBehaviour
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
+        jumped = true;
         jumpLock = 0.12f;
     }
 

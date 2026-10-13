@@ -64,7 +64,11 @@ public class TickToyAnimation : MonoBehaviour
             if (winder == null)
                 return;
 
-            animator.SetTrigger("WindPause");
+            int windLayer = animator.GetLayerIndex("Wind Layer");
+            if (windLayer >= 0)
+                animator.CrossFadeInFixedTime("WindPause", 0.05f, windLayer, 0f);
+            else
+                animator.SetTrigger("WindPause");
             winder.Freeze(5f);
         }
     }

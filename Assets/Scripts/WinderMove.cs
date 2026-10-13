@@ -40,6 +40,8 @@ public class WinderMove : MonoBehaviour
     private bool leftGround;
     private float restTime;
     private float jumpLock;
+    private float jumpCooldown;
+    private bool jumped;
     private Collider stepIgnored;
     private float vaultTopY;
     private float stepIgnoreUntil;
@@ -74,7 +76,7 @@ public class WinderMove : MonoBehaviour
     private TickToyHud hud;
 
     public bool IsGrounded => isGrounded;
-    public bool CanJump => jumpLock <= 0f && !leftGround;
+    public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
     public bool IsDead
     {
@@ -219,6 +221,9 @@ public class WinderMove : MonoBehaviour
 
     void FixedUpdate()
     {
+        if (jumpCooldown > 0f)
+            jumpCooldown -= Time.fixedDeltaTime;
+
         if (rb != null && rb.isKinematic)
         {
             ReleaseStep();
@@ -234,9 +239,13 @@ public class WinderMove : MonoBehaviour
             return;
         }
 
+        bool wasGrounded = isGrounded;
         isGrounded = ProbeGround();
         if (isGrounded)
         {
+            if (!wasGrounded && jumped)
+                jumpCooldown = 0.2f;
+            jumped = false;
             leftGround = false;
             restTime = 0f;
         }
@@ -676,6 +685,7 @@ public class WinderMove : MonoBehaviour
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
+        jumped = true;
         jumpLock = 0.12f;
     }
 
