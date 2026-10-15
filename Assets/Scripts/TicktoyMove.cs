@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -63,6 +64,9 @@ public class TickToyMove : MonoBehaviour
     private bool faintCanBreak;
     private bool faintOnGround;
     private float faintTimeLeft;
+    private float duplicateTimeLeft;
+    private readonly List<GameObject> duplicates = new List<GameObject>();
+    private static Material duplicateCloudMaterial;
     private int grantedAbility;
     private int grantedLevel;
     private float abilityDuration;
@@ -130,9 +134,21 @@ public class TickToyMove : MonoBehaviour
     }
 
     public bool IsFainted => State == TickToyState.Faint;
-    public bool IsUsingAbility => State == TickToyState.Run || State == TickToyState.Faint || runTimeLeft > 0f;
+    public bool IsUsingAbility =>
+        State == TickToyState.Run || State == TickToyState.Faint
+        || runTimeLeft > 0f || duplicateTimeLeft > 0f;
     public float AbilityDuration => abilityDuration;
-    public float AbilityTimeLeft => runTimeLeft > 0f ? runTimeLeft : faintTimeLeft;
+    public float AbilityTimeLeft
+    {
+        get
+        {
+            if (runTimeLeft > 0f)
+                return runTimeLeft;
+            if (duplicateTimeLeft > 0f)
+                return duplicateTimeLeft;
+            return faintTimeLeft;
+        }
+    }
 
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
@@ -152,8 +168,6 @@ public class TickToyMove : MonoBehaviour
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
         bodyCollider = GetComponent<Collider>();
-        if (rb != null)
-            rb.constraints = RigidbodyConstraints.FreezeRotation;
         EnsureTpsCamera();
         KeepOneAudioListener();
     }
@@ -258,6 +272,9 @@ public class TickToyMove : MonoBehaviour
                 State = TickToyState.Play;
         }
 
+        if (duplicateTimeLeft > 0f)
+            duplicateTimeLeft -= Time.deltaTime;
+
         switch (State)
         {
             case TickToyState.Faint:
@@ -349,9 +366,6 @@ public class TickToyMove : MonoBehaviour
 
     void Move(float speedScale)
     {
-        if (rb != null)
-            rb.angularVelocity = Vector3.zero;
-
         if (!isGrounded)
             return;
 
@@ -423,15 +437,8 @@ public class TickToyMove : MonoBehaviour
         Quaternion rotation = Quaternion.Euler(0f, yaw, 0f);
         transform.rotation = rotation;
 
-        if (rb == null)
-            return;
-
-        rb.constraints = RigidbodyConstraints.FreezeRotation;
-        if (rb.isKinematic)
-            return;
-
-        rb.angularVelocity = Vector3.zero;
-        rb.rotation = rotation;
+        if (rb != null && !rb.isKinematic)
+            rb.rotation = rotation;
     }
 
     void CacheBodyFrame()
@@ -523,6 +530,8 @@ public class TickToyMove : MonoBehaviour
             UseRunAbility(level);
         else if (kind == 2)
             UseFaintAbility(level);
+        else if (kind == 3)
+            UseDuplicateAbility(level);
     }
 
     bool PressedAbilityKey()
@@ -578,6 +587,243 @@ public class TickToyMove : MonoBehaviour
         faintTimeLeft = abilityDuration;
     }
 
+    public void UseDuplicateAbility(int level)
+    {
+        if (State == TickToyState.Dead)
+            return;
+
+        int cloneCount;
+        if (level <= 1)
+        {
+            abilityDuration = 3f;
+            cloneCount = 1;
+        }
+        else if (level == 2)
+        {
+            abilityDuration = 5f;
+            cloneCount = 2;
+        }
+        else
+        {
+            abilityDuration = 7f;
+            cloneCount = 4;
+        }
+
+        duplicateTimeLeft = abilityDuration;
+        SpawnDuplicates(cloneCount);
+        SpawnDuplicateCloud(abilityDuration);
+    }
+
+    void SpawnDuplicates(int count)
+    {
+        ClearDuplicates();
+        if (body == null)
+        {
+            Animator found = GetComponentInChildren<Animator>(true);
+            body = found != null ? found.transform : null;
+        }
+        if (body == null)
+            return;
+
+        const float radius = 1.15f;
+        for (int i = 0; i < count; i++)
+        {
+            float angle = count == 1 ? 90f : (360f * i / count);
+            float radians = angle * Mathf.Deg2Rad;
+            Vector3 offset =
+                transform.right * (Mathf.Cos(radians) * radius)
+                + transform.forward * (Mathf.Sin(radians) * radius);
+
+            GameObject clone = Instantiate(
+                body.gameObject,
+                body.position + offset,
+                body.rotation);
+            clone.name = gameObject.name + "_Duplicate_" + (i + 1);
+            PrepareDuplicate(clone);
+            duplicates.Add(clone);
+        }
+    }
+
+    void PrepareDuplicate(GameObject clone)
+    {
+        Camera[] cameras = clone.GetComponentsInChildren<Camera>(true);
+        for (int i = 0; i < cameras.Length; i++)
+            cameras[i].enabled = false;
+
+        AudioListener[] listeners = clone.GetComponentsInChildren<AudioListener>(true);
+        for (int i = 0; i < listeners.Length; i++)
+            listeners[i].enabled = false;
+
+        Collider[] colliders = clone.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; i++)
+            colliders[i].enabled = false;
+
+        Rigidbody[] bodies = clone.GetComponentsInChildren<Rigidbody>(true);
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            bodies[i].isKinematic = true;
+            bodies[i].useGravity = false;
+        }
+
+        MonoBehaviour[] behaviours = clone.GetComponentsInChildren<MonoBehaviour>(true);
+        for (int i = 0; i < behaviours.Length; i++)
+            behaviours[i].enabled = false;
+
+        Transform[] transforms = clone.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i].name.StartsWith("Spring"))
+                transforms[i].gameObject.SetActive(false);
+        }
+    }
+
+    void SpawnDuplicateCloud(float totalSeconds)
+    {
+        GameObject cloud = new GameObject(gameObject.name + "_DuplicateCloud");
+        cloud.transform.position = bodyCollider != null
+            ? bodyCollider.bounds.center
+            : transform.position + Vector3.up * (bodyHeight * 0.45f);
+
+        ParticleSystem particles = cloud.AddComponent<ParticleSystem>();
+        ParticleSystemRenderer particleRenderer = cloud.GetComponent<ParticleSystemRenderer>();
+        particleRenderer.renderMode = ParticleSystemRenderMode.Billboard;
+        particleRenderer.material = GetDuplicateCloudMaterial();
+
+        ParticleSystem.MainModule main = particles.main;
+        main.duration = 0.1f;
+        main.loop = false;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(totalSeconds * 0.8f, totalSeconds);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.75f, 1.45f);
+        main.startSize = new ParticleSystem.MinMaxCurve(5.5f, 10.5f);
+        main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+        main.startColor = Color.white;
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 140;
+        main.stopAction = ParticleSystemStopAction.Destroy;
+
+        ParticleSystem.EmissionModule emission = particles.emission;
+        emission.rateOverTime = 0f;
+        short puffCount = (short)Mathf.RoundToInt(60f + totalSeconds * 5f);
+        emission.SetBursts(new[]
+        {
+            new ParticleSystem.Burst(0f, puffCount)
+        });
+
+        ParticleSystem.ShapeModule shape = particles.shape;
+        shape.shapeType = ParticleSystemShapeType.Sphere;
+        shape.radius = 4.25f;
+        shape.radiusThickness = 1f;
+
+        ParticleSystem.LimitVelocityOverLifetimeModule limit = particles.limitVelocityOverLifetime;
+        limit.enabled = true;
+        limit.limit = 0.28f;
+        limit.dampen = 0.65f;
+
+        ParticleSystem.NoiseModule noise = particles.noise;
+        noise.enabled = true;
+        noise.strength = 0.12f;
+        noise.frequency = 0.35f;
+        noise.scrollSpeed = 0.08f;
+
+        ParticleSystem.ColorOverLifetimeModule color = particles.colorOverLifetime;
+        color.enabled = true;
+        Gradient gradient = new Gradient();
+        gradient.SetKeys(
+            new[]
+            {
+                new GradientColorKey(Color.white, 0f),
+                new GradientColorKey(Color.white, 1f)
+            },
+            new[]
+            {
+                new GradientAlphaKey(0f, 0f),
+                new GradientAlphaKey(1f, 0.04f),
+                new GradientAlphaKey(0.95f, 0.65f),
+                new GradientAlphaKey(0f, 1f)
+            });
+        color.color = gradient;
+
+        ParticleSystem.SizeOverLifetimeModule size = particles.sizeOverLifetime;
+        size.enabled = true;
+        AnimationCurve sizeCurve = new AnimationCurve(
+            new Keyframe(0f, 0.35f),
+            new Keyframe(0.12f, 1f),
+            new Keyframe(0.75f, 1.08f),
+            new Keyframe(1f, 0.8f));
+        size.size = new ParticleSystem.MinMaxCurve(1f, sizeCurve);
+
+        particles.Play();
+    }
+
+    static Material GetDuplicateCloudMaterial()
+    {
+        if (duplicateCloudMaterial != null)
+            return duplicateCloudMaterial;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+
+        duplicateCloudMaterial = new Material(shader);
+        duplicateCloudMaterial.name = "Duplicate Cloud Material";
+        duplicateCloudMaterial.hideFlags = HideFlags.HideAndDontSave;
+        duplicateCloudMaterial.SetColor("_BaseColor", Color.white);
+        duplicateCloudMaterial.SetTexture("_BaseMap", CreateCloudTexture());
+
+        if (duplicateCloudMaterial.HasProperty("_Surface"))
+            duplicateCloudMaterial.SetFloat("_Surface", 1f);
+        if (duplicateCloudMaterial.HasProperty("_Blend"))
+            duplicateCloudMaterial.SetFloat("_Blend", 0f);
+        if (duplicateCloudMaterial.HasProperty("_SrcBlend"))
+            duplicateCloudMaterial.SetFloat("_SrcBlend", 5f);
+        if (duplicateCloudMaterial.HasProperty("_DstBlend"))
+            duplicateCloudMaterial.SetFloat("_DstBlend", 10f);
+        if (duplicateCloudMaterial.HasProperty("_ZWrite"))
+            duplicateCloudMaterial.SetFloat("_ZWrite", 0f);
+
+        duplicateCloudMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        duplicateCloudMaterial.SetOverrideTag("RenderType", "Transparent");
+        duplicateCloudMaterial.renderQueue = 3000;
+        return duplicateCloudMaterial;
+    }
+
+    static Texture2D CreateCloudTexture()
+    {
+        const int size = 64;
+        Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        texture.name = "Duplicate Cloud Puff";
+        texture.hideFlags = HideFlags.HideAndDontSave;
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = FilterMode.Bilinear;
+
+        Color[] pixels = new Color[size * size];
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float nx = (x + 0.5f) / size * 2f - 1f;
+                float ny = (y + 0.5f) / size * 2f - 1f;
+                float distance = Mathf.Sqrt(nx * nx + ny * ny);
+                float alpha = 1f - Mathf.SmoothStep(0.55f, 1f, distance);
+                pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+
+        texture.SetPixels(pixels);
+        texture.Apply();
+        return texture;
+    }
+
+    void ClearDuplicates()
+    {
+        for (int i = 0; i < duplicates.Count; i++)
+        {
+            if (duplicates[i] != null)
+                Destroy(duplicates[i]);
+        }
+        duplicates.Clear();
+    }
+
     public void BreakFaint()
     {
         if (State != TickToyState.Faint || !faintCanBreak)
@@ -595,6 +841,7 @@ public class TickToyMove : MonoBehaviour
             return;
 
         State = TickToyState.Dead;
+        ClearDuplicates();
         SetBodySolid(false);
     }
 
@@ -661,7 +908,6 @@ public class TickToyMove : MonoBehaviour
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
-        rb.angularVelocity = Vector3.zero;
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
@@ -692,11 +938,7 @@ public class TickToyMove : MonoBehaviour
     void ReleaseStep()
     {
         if (stepIgnored != null && bodyCollider != null)
-        {
-            if (rb != null)
-                rb.angularVelocity = Vector3.zero;
             Physics.IgnoreCollision(bodyCollider, stepIgnored, false);
-        }
 
         stepIgnored = null;
     }
@@ -704,6 +946,7 @@ public class TickToyMove : MonoBehaviour
     void OnDisable()
     {
         ReleaseStep();
+        ClearDuplicates();
     }
 
     bool FindClimbableStep(Vector3 dir, out Collider step)

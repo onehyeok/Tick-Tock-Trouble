@@ -199,7 +199,6 @@ public class WinderMove : MonoBehaviour
         if (rb != null && !rb.isKinematic)
         {
             rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
             rb.isKinematic = true;
             freezeHeldBody = true;
         }
@@ -681,7 +680,6 @@ public class WinderMove : MonoBehaviour
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
-        rb.angularVelocity = Vector3.zero;
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
@@ -712,11 +710,7 @@ public class WinderMove : MonoBehaviour
     void ReleaseStep()
     {
         if (stepIgnored != null && bodyCollider != null)
-        {
-            if (rb != null)
-                rb.angularVelocity = Vector3.zero;
             Physics.IgnoreCollision(bodyCollider, stepIgnored, false);
-        }
 
         stepIgnored = null;
     }

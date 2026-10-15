@@ -139,6 +139,16 @@ public class TickToyAnimation : MonoBehaviour
 
     void LateUpdate()
     {
+        if (animator == null)
+            return;
+
+        bool winding = leftUpperLeg != null && animator.GetBool("IsWinding");
+        if (winding && !IsProne() && !move.IsDead && !move.IsFainted)
+        {
+            SpreadLegsOnSpot();
+            return;
+        }
+
         if (ShouldPlantFeet())
         {
             if (!modelShifted)
@@ -147,38 +157,64 @@ public class TickToyAnimation : MonoBehaviour
                 modelShifted = true;
             }
 
-            PlantFeet();
+            PlantFeet(IsProne());
             return;
         }
 
-        if (modelShifted)
+        RestoreModel();
+    }
+
+    void RestoreModel()
+    {
+        if (!modelShifted)
+            return;
+
+        animator.transform.localPosition = modelRestLocal;
+        modelShifted = false;
+    }
+
+    void SpreadLegsOnSpot()
+    {
+        RestoreModel();
+
+        Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        if (leftFoot == null || rightFoot == null)
         {
-            animator.transform.localPosition = modelRestLocal;
-            modelShifted = false;
+            SpreadLeg(leftUpperLeg, leftLowerLeg, -animator.transform.right);
+            SpreadLeg(rightUpperLeg, rightLowerLeg, animator.transform.right);
+            return;
         }
 
-        if (leftUpperLeg == null || !animator.GetBool("IsWinding"))
-            return;
-
+        float before = Mathf.Min(leftFoot.position.y, rightFoot.position.y);
         SpreadLeg(leftUpperLeg, leftLowerLeg, -animator.transform.right);
         SpreadLeg(rightUpperLeg, rightLowerLeg, animator.transform.right);
+        float rise = Mathf.Min(leftFoot.position.y, rightFoot.position.y) - before;
+        if (rise <= 0.001f)
+            return;
+
+        modelRestLocal = animator.transform.localPosition;
+        modelShifted = true;
+        animator.transform.position -= Vector3.up * rise;
+    }
+
+    bool IsProne()
+    {
+        return animator.GetBool("IsProne") || IsInState("Prone");
     }
 
     bool ShouldPlantFeet()
     {
-        if (animator == null)
-            return false;
-
         if (move.IsDead || move.IsFainted)
             return IsInState("Die");
 
         if (!move.IsGrounded)
             return false;
 
-        return animator.GetBool("IsProne") || IsInState("Prone");
+        return IsProne();
     }
 
-    void PlantFeet()
+    void PlantFeet(bool includeHands)
     {
         if (!animator.isHuman)
             return;
@@ -189,6 +225,16 @@ public class TickToyAnimation : MonoBehaviour
             return;
 
         float footY = Mathf.Min(leftFoot.position.y, rightFoot.position.y);
+        if (includeHands)
+        {
+            Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+            Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
+            if (leftHand != null)
+                footY = Mathf.Min(footY, leftHand.position.y);
+            if (rightHand != null)
+                footY = Mathf.Min(footY, rightHand.position.y);
+        }
+
         Vector3 feet = (leftFoot.position + rightFoot.position) * 0.5f;
         Vector3 origin = new Vector3(feet.x, footY + 2f, feet.z);
         RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 4f, ~0, QueryTriggerInteraction.Ignore);

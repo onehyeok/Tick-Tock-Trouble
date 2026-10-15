@@ -7,7 +7,8 @@ public class TickToyHud : MonoBehaviour
     {
         None,
         Run,
-        Faint
+        Faint,
+        Duplicate
     }
 
     [Header("Status")]
@@ -23,6 +24,7 @@ public class TickToyHud : MonoBehaviour
     [Header("Ability")]
     [SerializeField] private Sprite runAbilityIcon;
     [SerializeField] private Sprite faintAbilityIcon;
+    [SerializeField] private Sprite duplicateAbilityIcon;
     [SerializeField] private Sprite zeroAbilityIcon;
 
     [Header("UI")]
@@ -64,6 +66,7 @@ public class TickToyHud : MonoBehaviour
 
     void Update()
     {
+        UpdateAbilityTestKeys();
         RefreshStopPrompt();
         if (stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
             GrantOrLevelFromStop();
@@ -84,6 +87,26 @@ public class TickToyHud : MonoBehaviour
             return;
 
         HideGauge();
+    }
+
+    void UpdateAbilityTestKeys()
+    {
+        if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
+            GrantTestAbility(AbilityKind.Run);
+        else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
+            GrantTestAbility(AbilityKind.Faint);
+        else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
+            GrantTestAbility(AbilityKind.Duplicate);
+    }
+
+    void GrantTestAbility(AbilityKind kind)
+    {
+        abilityKind = kind;
+        abilityLevel = 1;
+        windProgress = 0f;
+        HideGauge();
+        ShowAbility();
+        ApplyAbilityToToys();
     }
 
     void ShowWindGauge()
@@ -223,7 +246,7 @@ public class TickToyHud : MonoBehaviour
 
         if (abilityLevel <= 0)
         {
-            abilityKind = Random.Range(0, 2) == 0 ? AbilityKind.Run : AbilityKind.Faint;
+            abilityKind = (AbilityKind)Random.Range(1, 4);
             abilityLevel = 1;
         }
         else
@@ -238,7 +261,12 @@ public class TickToyHud : MonoBehaviour
 
     public void PresentAbility(int kind, int level)
     {
-        abilityKind = kind == 2 ? AbilityKind.Faint : AbilityKind.Run;
+        if (kind == 2)
+            abilityKind = AbilityKind.Faint;
+        else if (kind == 3)
+            abilityKind = AbilityKind.Duplicate;
+        else
+            abilityKind = AbilityKind.Run;
         abilityLevel = Mathf.Clamp(level, 1, 3);
         ShowAbility();
     }
@@ -324,7 +352,7 @@ public class TickToyHud : MonoBehaviour
     {
         if (abilityLevel <= 0)
         {
-            abilityKind = Random.Range(0, 2) == 0 ? AbilityKind.Run : AbilityKind.Faint;
+            abilityKind = (AbilityKind)Random.Range(1, 4);
             abilityLevel = 1;
         }
         else
@@ -337,7 +365,11 @@ public class TickToyHud : MonoBehaviour
 
     void ShowAbility()
     {
-        Sprite sprite = abilityKind == AbilityKind.Faint ? faintAbilityIcon : runAbilityIcon;
+        Sprite sprite = runAbilityIcon;
+        if (abilityKind == AbilityKind.Faint)
+            sprite = faintAbilityIcon;
+        else if (abilityKind == AbilityKind.Duplicate)
+            sprite = duplicateAbilityIcon;
         abilityIconRoot.SetActive(true);
         if (abilityIcon != null)
         {
@@ -348,7 +380,12 @@ public class TickToyHud : MonoBehaviour
 
         if (abilityFallbackText != null)
         {
-            abilityFallbackText.text = abilityKind == AbilityKind.Faint ? "기절하기" : "달리기";
+            if (abilityKind == AbilityKind.Faint)
+                abilityFallbackText.text = "기절하기";
+            else if (abilityKind == AbilityKind.Duplicate)
+                abilityFallbackText.text = "분신술";
+            else
+                abilityFallbackText.text = "달리기";
             abilityFallbackText.gameObject.SetActive(sprite == null);
         }
 
@@ -367,7 +404,11 @@ public class TickToyHud : MonoBehaviour
 
     void ApplyAbilityToToys()
     {
-        int kind = abilityKind == AbilityKind.Faint ? 2 : 1;
+        int kind = 1;
+        if (abilityKind == AbilityKind.Faint)
+            kind = 2;
+        else if (abilityKind == AbilityKind.Duplicate)
+            kind = 3;
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
             toys[i].GrantAbility(kind, abilityLevel);

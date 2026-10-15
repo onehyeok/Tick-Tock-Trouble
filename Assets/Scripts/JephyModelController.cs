@@ -3,6 +3,7 @@ using UnityEngine;
 public class JephyModelController : MonoBehaviour
 {
     private TickToyMove move;
+    private Animator animator;
     private Transform neck;
     private Transform head;
     private Vector3 neckPosition;
@@ -16,7 +17,7 @@ public class JephyModelController : MonoBehaviour
     void Awake()
     {
         move = GetComponent<TickToyMove>();
-        Animator animator = GetComponentInChildren<Animator>();
+        animator = GetComponentInChildren<Animator>();
         if (animator == null || !animator.isHuman)
             return;
 
@@ -31,6 +32,9 @@ public class JephyModelController : MonoBehaviour
 
         if (!move.IsWinding)
         {
+            if (animator.IsInTransition(0) || !animator.GetCurrentAnimatorStateInfo(0).IsName("Idle"))
+                return;
+
             neckPosition = neck.localPosition;
             neckRotation = neck.localRotation;
             neckScale = neck.localScale;
