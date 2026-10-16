@@ -146,6 +146,7 @@ public class TickToyAnimation : MonoBehaviour
         if (winding && !IsProne() && !move.IsDead && !move.IsFainted)
         {
             SpreadLegsOnSpot();
+            move.FitProneCollider();
             return;
         }
 
@@ -158,10 +159,12 @@ public class TickToyAnimation : MonoBehaviour
             }
 
             PlantFeet(IsProne());
+            move.FitProneCollider();
             return;
         }
 
         RestoreModel();
+        move.FitProneCollider();
     }
 
     void RestoreModel()

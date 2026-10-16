@@ -49,6 +49,10 @@ public class WinderMove : MonoBehaviour
     private static readonly RaycastHit[] GroundHits = new RaycastHit[8];
     private bool isProne = false;
     private Collider bodyCollider;
+    private BoxCollider bodyBox;
+    private Vector3 standColliderSize;
+    private Vector3 standColliderCenter;
+    private bool standColliderCached;
     private Transform spring;
     private Quaternion springBaseRotation;
     private float springDegrees;
@@ -93,6 +97,7 @@ public class WinderMove : MonoBehaviour
         animationController = GetComponent<WinderAnimation>();
         rb = GetComponent<Rigidbody>();
         bodyCollider = GetComponent<Collider>();
+        CacheStandCollider();
         CacheSpring();
         TickToyMove.KeepOneAudioListener();
     }
@@ -306,6 +311,7 @@ public class WinderMove : MonoBehaviour
 
     void LateUpdate()
     {
+        FitProneCollider();
         if (IsFrozen)
             return;
 
@@ -574,6 +580,123 @@ public class WinderMove : MonoBehaviour
     {
         isProne = Input.GetKey(KeyCode.LeftControl);
         animationController.SetProne(isProne);
+    }
+
+    void CacheStandCollider()
+    {
+        bodyBox = bodyCollider as BoxCollider;
+        if (bodyBox == null)
+            return;
+
+        standColliderSize = bodyBox.size;
+        standColliderCenter = bodyBox.center;
+        standColliderCached = true;
+    }
+
+    public void FitProneCollider()
+    {
+        if (!standColliderCached)
+            return;
+
+        if (bodyAnimator == null)
+            bodyAnimator = GetComponentInChildren<Animator>();
+
+        bool lying = isProne;
+        if (!lying && bodyAnimator != null)
+        {
+            if (bodyAnimator.GetCurrentAnimatorStateInfo(0).IsName("Prone"))
+                lying = true;
+            else if (bodyAnimator.IsInTransition(0) && bodyAnimator.GetNextAnimatorStateInfo(0).IsName("Prone"))
+                lying = true;
+        }
+
+        if (!lying || bodyAnimator == null || !bodyAnimator.isHuman)
+        {
+            RestoreStandCollider();
+            return;
+        }
+
+        Vector3 min = Vector3.positiveInfinity;
+        Vector3 max = Vector3.negativeInfinity;
+        EncapsulateBone(HumanBodyBones.Hips, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.Spine, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.Chest, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.Head, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightUpperArm, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftHand, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightHand, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftFoot, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightFoot, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftToes, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightToes, ref min, ref max);
+        if (float.IsPositiveInfinity(min.x))
+        {
+            RestoreStandCollider();
+            return;
+        }
+
+        Transform head = bodyAnimator.GetBoneTransform(HumanBodyBones.Head);
+        Transform hips = bodyAnimator.GetBoneTransform(HumanBodyBones.Hips);
+        if (head != null && hips != null)
+        {
+            Vector3 headLocal = transform.InverseTransformPoint(head.position);
+            Vector3 hipsLocal = transform.InverseTransformPoint(hips.position);
+            Vector3 along = headLocal - hipsLocal;
+            if (along.sqrMagnitude > 0.0001f)
+            {
+                Vector3 snout = headLocal + along.normalized * 0.22f;
+                min = Vector3.Min(min, snout);
+                max = Vector3.Max(max, snout);
+            }
+
+            Vector3 ears = headLocal + Vector3.up * 0.18f;
+            min = Vector3.Min(min, ears);
+            max = Vector3.Max(max, ears);
+        }
+
+        min.x -= 0.16f;
+        max.x += 0.16f;
+        min.z -= 0.14f;
+        max.z += 0.14f;
+        max.y += 0.08f;
+
+        float standBottom = standColliderCenter.y - standColliderSize.y * 0.5f;
+        if (min.y < standBottom)
+            min.y = standBottom;
+
+        if (max.y - min.y > standColliderSize.y * 0.75f)
+        {
+            RestoreStandCollider();
+            return;
+        }
+
+        Vector3 size = max - min;
+        size.x = Mathf.Max(size.x, 0.45f);
+        size.y = Mathf.Max(size.y, 0.35f);
+        size.z = Mathf.Max(size.z, 0.45f);
+        bodyBox.size = size;
+        bodyBox.center = (min + max) * 0.5f;
+    }
+
+    void RestoreStandCollider()
+    {
+        if (bodyBox.size == standColliderSize && bodyBox.center == standColliderCenter)
+            return;
+
+        bodyBox.size = standColliderSize;
+        bodyBox.center = standColliderCenter;
+    }
+
+    void EncapsulateBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
+    {
+        Transform boneTransform = bodyAnimator.GetBoneTransform(bone);
+        if (boneTransform == null)
+            return;
+
+        Vector3 local = transform.InverseTransformPoint(boneTransform.position);
+        min = Vector3.Min(min, local);
+        max = Vector3.Max(max, local);
     }
 
     Vector3 PlanarVelocity()
