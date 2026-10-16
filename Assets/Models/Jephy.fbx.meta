@@ -452,7 +452,7 @@ ModelImporter:
     foreArmTwist: 0.5
     upperLegTwist: 0.5
     legTwist: 0.5
-    armStretch: 0.05
+    armStretch: 0
     legStretch: 0.05
     feetSpacing: 0
     globalScale: 1
