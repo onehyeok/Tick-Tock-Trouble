@@ -17,7 +17,7 @@ public class WinderMove : MonoBehaviour
 
     private WinderAnimation animationController;
 
-    private float moveSpeed = 5f;
+    private float moveSpeed = 6f;
     [SerializeField] private float proneMoveSpeedMultiplier = 0.5f;
     private float sensitivity = 200f;
 

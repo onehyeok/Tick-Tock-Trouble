@@ -134,6 +134,20 @@ public class TickToyHud : MonoBehaviour
             windRoot.SetActive(false);
     }
 
+    public void HideAll()
+    {
+        if (stopPrompt != null)
+            stopPrompt.gameObject.SetActive(false);
+        gameObject.SetActive(false);
+    }
+
+    public void SetHp(int nextHp)
+    {
+        hp = Mathf.Max(0, nextHp);
+        if (hpText != null)
+            hpText.text = hp.ToString();
+    }
+
     public void SetStatus(int nextTickToyCount, int nextWinderCount, int nextRoundCount, float nextRemainSeconds, int nextHp)
     {
         tickToyCount = nextTickToyCount;

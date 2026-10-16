@@ -37,6 +37,9 @@ public class TickToyAnimation : MonoBehaviour
 
     void Update()
     {
+        if (Input.GetKeyDown(KeyCode.H))
+            PlayGetHit();
+
         if (Input.GetKeyDown(KeyCode.K))
         {
             move.IsDead = true;
@@ -278,6 +281,46 @@ public class TickToyAnimation : MonoBehaviour
     public void SetProne(bool isProne)
     {
         animator.SetBool("IsProne", isProne);
+    }
+
+    public void PlayGetHit()
+    {
+        if (animator == null || move.IsDead)
+            return;
+
+        if (HasTrigger("GetHit"))
+        {
+            animator.ResetTrigger("GetHit");
+            animator.SetTrigger("GetHit");
+            return;
+        }
+
+        int layer = animator.GetLayerIndex("Hit Layer");
+        if (layer < 0)
+            layer = animator.GetLayerIndex("GetHit");
+        if (layer >= 0)
+            animator.CrossFadeInFixedTime("GetHit", 0.05f, layer, 0f);
+    }
+
+    public void PlayDie()
+    {
+        if (animator == null)
+            return;
+
+        animator.SetTrigger("Die");
+    }
+
+    bool HasTrigger(string name)
+    {
+        AnimatorControllerParameter[] parameters = animator.parameters;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if (parameters[i].type == AnimatorControllerParameterType.Trigger
+                && parameters[i].name == name)
+                return true;
+        }
+
+        return false;
     }
 
     public bool IsFaintSettled()

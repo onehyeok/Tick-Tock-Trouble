@@ -1,10 +1,16 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
 public class WinderAnimation : MonoBehaviour
 {
+    private const int AttackDamage = 30;
+    private static readonly Collider[] AttackHits = new Collider[16];
+
     private Animator animator;
     private WinderMove move;
+    private BoxCollider hitPoint;
+    private readonly HashSet<int> hitThisSwing = new HashSet<int>();
     private bool attackArmed;
     private bool ignoreHeldClick;
 
@@ -14,6 +20,36 @@ public class WinderAnimation : MonoBehaviour
     {
         animator = GetComponentInChildren<Animator>();
         move = GetComponent<WinderMove>();
+        CacheHitPoint();
+    }
+
+    void CacheHitPoint()
+    {
+        Transform found = transform.Find("HitPoint");
+        if (found != null)
+            hitPoint = found.GetComponent<BoxCollider>();
+
+        if (hitPoint == null)
+        {
+            BoxCollider[] boxes = GetComponentsInChildren<BoxCollider>(true);
+            for (int i = 0; i < boxes.Length; i++)
+            {
+                if (boxes[i] != null && boxes[i].name == "HitPoint")
+                {
+                    hitPoint = boxes[i];
+                    break;
+                }
+            }
+        }
+
+        if (hitPoint == null)
+            return;
+
+        hitPoint.isTrigger = true;
+        Vector3 size = hitPoint.size;
+        if (Mathf.Abs(size.z) < 0.2f)
+            size.z = 0.45f;
+        hitPoint.size = size;
     }
 
     public void SetPaused(bool paused)
@@ -43,7 +79,7 @@ public class WinderAnimation : MonoBehaviour
                 break;
             default:
                 Attack();
-                HitFaintedTickToy();
+                HitTickToys();
                 Jump();
                 break;
         }
@@ -142,19 +178,59 @@ public class WinderAnimation : MonoBehaviour
         return animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0");
     }
 
-    void HitFaintedTickToy()
+    void HitTickToys()
     {
         if (!IsSwinging())
+        {
+            hitThisSwing.Clear();
+            return;
+        }
+
+        if (hitPoint == null)
+            CacheHitPoint();
+        if (hitPoint == null)
             return;
 
-        Vector3 origin = transform.position + transform.forward * 0.7f + Vector3.up * 0.8f;
-        Collider[] hits = Physics.OverlapSphere(origin, 0.9f);
-        for (int i = 0; i < hits.Length; i++)
+        Vector3 size = hitPoint.size;
+        size.x = Mathf.Max(Mathf.Abs(size.x), 0.2f);
+        size.y = Mathf.Max(Mathf.Abs(size.y), 0.2f);
+        size.z = Mathf.Max(Mathf.Abs(size.z), 0.4f);
+        Vector3 halfExtents = Vector3.Scale(size * 0.5f, hitPoint.transform.lossyScale);
+        Vector3 center = hitPoint.transform.TransformPoint(hitPoint.center);
+        int count = Physics.OverlapBoxNonAlloc(
+            center,
+            halfExtents,
+            AttackHits,
+            hitPoint.transform.rotation,
+            ~0,
+            QueryTriggerInteraction.Ignore);
+
+        for (int i = 0; i < count; i++)
         {
-            TickToyMove toy = hits[i].GetComponentInParent<TickToyMove>();
-            if (toy != null)
-                toy.BreakFaint();
+            Collider hit = AttackHits[i];
+            if (hit == null || hit.transform == transform || hit.transform.IsChildOf(transform))
+                continue;
+
+            TickToyMove toy = hit.GetComponentInParent<TickToyMove>();
+            if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))
+                continue;
+
+            toy.TakeHit(AttackDamage);
         }
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (!IsSwinging() || other == null)
+            return;
+        if (other.transform == transform || other.transform.IsChildOf(transform))
+            return;
+
+        TickToyMove toy = other.GetComponentInParent<TickToyMove>();
+        if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))
+            return;
+
+        toy.TakeHit(AttackDamage);
     }
 
     void Jump()

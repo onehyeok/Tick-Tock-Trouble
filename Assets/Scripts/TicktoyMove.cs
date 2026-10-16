@@ -75,6 +75,7 @@ public class TickToyMove : MonoBehaviour
     private int grantedAbility;
     private int grantedLevel;
     private float abilityDuration;
+    private int hp = 100;
 
     public WinderMove FindWinderInReach()
     {
@@ -944,6 +945,33 @@ public class TickToyMove : MonoBehaviour
                 Destroy(duplicates[i]);
         }
         duplicates.Clear();
+    }
+
+    public void TakeHit(int damage)
+    {
+        if (State == TickToyState.Dead)
+            return;
+
+        if (State == TickToyState.Faint)
+            BreakFaint();
+
+        hp = Mathf.Max(0, hp - Mathf.Max(0, damage));
+        TickToyHud hud = FindAnyObjectByType<TickToyHud>();
+        if (hud != null)
+            hud.SetHp(hp);
+
+        if (hp <= 0)
+        {
+            EnterDead();
+            if (hud != null)
+                hud.HideAll();
+            if (animationController != null)
+                animationController.PlayDie();
+            return;
+        }
+
+        if (animationController != null)
+            animationController.PlayGetHit();
     }
 
     public void BreakFaint()
