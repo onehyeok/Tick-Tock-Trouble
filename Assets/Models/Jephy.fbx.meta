@@ -55,7 +55,7 @@ ModelImporter:
     extraExposedTransformPaths: []
     extraUserProperties: []
     clipAnimations: []
-    isReadable: 0
+    isReadable: 1
   meshes:
     lODScreenPercentages: []
     globalScale: 1
@@ -452,7 +452,7 @@ ModelImporter:
     foreArmTwist: 0.5
     upperLegTwist: 0.5
     legTwist: 0.5
-    armStretch: 0
+    armStretch: 0.05
     legStretch: 0.05
     feetSpacing: 0
     globalScale: 1

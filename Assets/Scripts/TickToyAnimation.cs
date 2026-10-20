@@ -13,6 +13,7 @@ public class TickToyAnimation : MonoBehaviour
     private Transform rightLowerLeg;
     private Vector3 modelRestLocal;
     private bool modelShifted;
+    private JumpArmEase jumpArms;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 18f;
@@ -144,6 +145,13 @@ public class TickToyAnimation : MonoBehaviour
     {
         if (animator == null)
             return;
+
+        if (jumpArms == null)
+            jumpArms = new JumpArmEase(animator);
+
+        bool jumping = jumpArms.Apply(animator);
+        if (!jumping && !animator.IsInTransition(0) && animator.GetCurrentAnimatorStateInfo(0).IsName("Idle") && !move.IsWinding)
+            jumpArms.Cache();
 
         bool winding = leftUpperLeg != null && animator.GetBool("IsWinding");
         if (winding && !IsProne() && !move.IsDead && !move.IsFainted)

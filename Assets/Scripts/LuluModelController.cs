@@ -25,6 +25,7 @@ public class LuluModelController : MonoBehaviour
 
         neck = animator.GetBoneTransform(HumanBodyBones.Neck);
         head = animator.GetBoneTransform(HumanBodyBones.Head);
+        ArmpitSeparator.Apply(animator);
     }
 
     void LateUpdate()

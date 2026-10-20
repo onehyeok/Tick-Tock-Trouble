@@ -8,27 +8,7 @@ ModelImporter:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: BakedMaterial
-    second: {fileID: 2100000, guid: a92d5054e6e737842ba709687d695856, type: 2}
-  - first:
-      type: UnityEngine:Texture2D
-      assembly: UnityEngine.CoreModule
-      name: texture_0
-    second: {fileID: 2800000, guid: 7b2f4f3630921a146b3d182c49cfeee4, type: 3}
-  - first:
-      type: UnityEngine:Texture2D
-      assembly: UnityEngine.CoreModule
-      name: texture_0_metallic
-    second: {fileID: 2800000, guid: b4944e1abc525c1408eee3ea50a482bd, type: 3}
-  - first:
-      type: UnityEngine:Texture2D
-      assembly: UnityEngine.CoreModule
-      name: texture_0_normal
-    second: {fileID: 2800000, guid: f1a08c87ae403ff47b3e43176e7c6685, type: 3}
-  - first:
-      type: UnityEngine:Texture2D
-      assembly: UnityEngine.CoreModule
-      name: texture_0_roughness
-    second: {fileID: 2800000, guid: ebead94471220bf419be19ea4dded76d, type: 3}
+    second: {fileID: 2100000, guid: 4718d904dd6ba0b4597323a8ac76ef8d, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0
