@@ -95,7 +95,7 @@ public class TickToyAnimation : MonoBehaviour
         move.IsWinding = false;
         SetSpineSpringsActive(false);
         animator.SetInteger("State", run ? 1 : 0);
-        animator.CrossFadeInFixedTime(run ? "Run" : "HumanM@Idle01", 0.15f, 0, 0f);
+        animator.CrossFadeInFixedTime(run ? "Run" : "Idle", 0.15f, 0, 0f);
         if (Input.GetMouseButton(0))
             ignoreWindUntilRelease = true;
     }
