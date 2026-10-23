@@ -60,12 +60,6 @@ public class JumpArmEase
         return true;
     }
 
-    public static bool IsJumping(Animator animator)
-    {
-        float time;
-        return InJump(animator, out time);
-    }
-
     static bool InJump(Animator animator, out float time)
     {
         time = 0f;

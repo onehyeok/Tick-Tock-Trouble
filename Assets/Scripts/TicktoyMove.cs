@@ -309,7 +309,7 @@ public class TickToyMove : MonoBehaviour
             SetBodySolid(false);
         }
 
-        if (animationController.IsFaintSettled() && MoveInput.sqrMagnitude > 0.01f)
+        if (faintOnGround && faintCanBreak && animationController.IsFaintSettled() && WantsStand())
             BreakFaint();
         else if (faintTimeLeft >= 0f)
         {
@@ -343,6 +343,16 @@ public class TickToyMove : MonoBehaviour
         MoveInput = new Vector2(
             Input.GetAxisRaw("Horizontal"),
             Input.GetAxisRaw("Vertical"));
+    }
+
+    bool WantsStand()
+    {
+        if (MoveInput.sqrMagnitude > 0.01f)
+            return true;
+
+        return Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)
+            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow)
+            || Input.GetMouseButton(0);
     }
 
     void Prone()

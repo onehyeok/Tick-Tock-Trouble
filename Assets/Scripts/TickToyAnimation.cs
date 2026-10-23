@@ -14,6 +14,7 @@ public class TickToyAnimation : MonoBehaviour
     private Vector3 modelRestLocal;
     private bool modelShifted;
     private JumpArmEase jumpArms;
+    private bool ignoreWindUntilRelease;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 18f;
@@ -87,8 +88,34 @@ public class TickToyAnimation : MonoBehaviour
             return;
         }
 
-        if (!move.IsDead && IsInState("Die"))
-            animator.CrossFadeInFixedTime("Idle", 0.15f, 0);
+        if (move.IsDead || !IsInState("Die"))
+            return;
+
+        if (WantsRun())
+        {
+            animator.SetInteger("State", 1);
+            animator.CrossFadeInFixedTime("Run", 0.15f, 0);
+            return;
+        }
+
+        animator.SetInteger("State", 0);
+        animator.SetBool("IsWinding", false);
+        move.IsWinding = false;
+        SetSpineSpringsActive(false);
+        animator.CrossFadeInFixedTime("Idle", 0.15f, 0);
+        if (Input.GetMouseButton(0))
+            ignoreWindUntilRelease = true;
+    }
+
+    static bool WantsRun()
+    {
+        Vector2 move = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+        if (move.sqrMagnitude > 0.01f)
+            return true;
+
+        return Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)
+            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow)
+            || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow);
     }
 
     bool IsInState(string stateName)
@@ -101,6 +128,19 @@ public class TickToyAnimation : MonoBehaviour
 
     void UpdateWind()
     {
+        if (ignoreWindUntilRelease)
+        {
+            if (Input.GetMouseButton(0))
+            {
+                animator.SetBool("IsWinding", false);
+                move.IsWinding = false;
+                SetSpineSpringsActive(false);
+                return;
+            }
+
+            ignoreWindUntilRelease = false;
+        }
+
         bool isWinding =
             Input.GetMouseButton(0) && !move.IsDead && move.MoveInput.sqrMagnitude < 0.01f && !Input.GetKey(KeyCode.Space) && !Input.GetKey(KeyCode.LeftControl);
 
@@ -337,7 +377,7 @@ public class TickToyAnimation : MonoBehaviour
             return false;
 
         AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
-        return state.IsName("Die") && state.normalizedTime >= 1f;
+        return state.IsName("Die") && state.normalizedTime >= 0.45f;
     }
 
     void Jump()
