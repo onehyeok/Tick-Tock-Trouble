@@ -67,6 +67,7 @@ public class TickToyMove : MonoBehaviour
     private bool isProne = false;
     private float runTimeLeft;
     private bool faintCanBreak;
+    private bool waitStandRelease;
     private bool faintOnGround;
     private float faintTimeLeft;
     private float duplicateTimeLeft;
@@ -140,6 +141,7 @@ public class TickToyMove : MonoBehaviour
     }
 
     public bool IsFainted => State == TickToyState.Faint;
+    public bool FaintCancelled { get; private set; }
     public bool IsUsingAbility =>
         State == TickToyState.Run || State == TickToyState.Faint
         || runTimeLeft > 0f || duplicateTimeLeft > 0f;
@@ -295,6 +297,20 @@ public class TickToyMove : MonoBehaviour
 
     void TickPlay()
     {
+        if (waitStandRelease)
+        {
+            if (WantsRun())
+                waitStandRelease = false;
+            else if (WantsStand())
+            {
+                Look();
+                animationController.SetMove(false);
+                return;
+            }
+            else
+                waitStandRelease = false;
+        }
+
         Prone();
         Look();
         Move(State == TickToyState.Run ? 2f : 1f);
@@ -310,19 +326,16 @@ public class TickToyMove : MonoBehaviour
         }
 
         if (faintOnGround && faintCanBreak && animationController.IsFaintSettled() && WantsStand())
-            BreakFaint();
+            BreakFaint(true);
         else if (faintTimeLeft >= 0f)
         {
             faintTimeLeft -= Time.deltaTime;
             if (faintTimeLeft <= 0f)
-                BreakFaint();
+                BreakFaint(false);
         }
 
         if (State != TickToyState.Faint)
-        {
-            TickPlay();
             return;
-        }
 
         animationController.SetFaint(true);
     }
@@ -345,14 +358,18 @@ public class TickToyMove : MonoBehaviour
             Input.GetAxisRaw("Vertical"));
     }
 
-    bool WantsStand()
+    bool WantsRun()
     {
         if (MoveInput.sqrMagnitude > 0.01f)
             return true;
 
         return Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.D)
-            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow)
-            || Input.GetMouseButton(0);
+            || Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.DownArrow) || Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.RightArrow);
+    }
+
+    bool WantsStand()
+    {
+        return WantsRun() || Input.GetMouseButton(0) || Input.GetKey(KeyCode.Z);
     }
 
     void Prone()
@@ -705,6 +722,7 @@ public class TickToyMove : MonoBehaviour
             return;
 
         State = TickToyState.Faint;
+        FaintCancelled = false;
         faintCanBreak = false;
         faintOnGround = FeetNearGround();
         if (faintOnGround)
@@ -986,13 +1004,26 @@ public class TickToyMove : MonoBehaviour
 
     public void BreakFaint()
     {
+        BreakFaint(true);
+    }
+
+    void BreakFaint(bool cancelled)
+    {
         if (State != TickToyState.Faint || !faintCanBreak)
             return;
 
         faintCanBreak = false;
+        if (cancelled)
+        {
+            faintTimeLeft = 0f;
+            FaintCancelled = true;
+        }
+
+        bool run = WantsRun();
+        waitStandRelease = !run;
         SetBodySolid(true);
-        animationController.SetFaint(false);
-        State = runTimeLeft > 0f ? TickToyState.Run : TickToyState.Play;
+        animationController.SetFaint(false, run);
+        State = run && runTimeLeft > 0f ? TickToyState.Run : TickToyState.Play;
     }
 
     void EnterDead()

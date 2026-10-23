@@ -216,12 +216,22 @@ public class TickToyHud : MonoBehaviour
     bool ShowUsingGauge()
     {
         TickToyMove usingToy = null;
+        TickToyMove faintToy = null;
+        bool faintCancelled = false;
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
         {
-            if (toys[i].IsUsingAbility)
+            if (toys[i].FaintCancelled)
+                faintCancelled = true;
+
+            if (toys[i].IsUsingAbility && !toys[i].IsFainted)
                 usingToy = toys[i];
+            else if (toys[i].IsFainted)
+                faintToy = toys[i];
         }
+
+        if (usingToy == null && faintToy != null && !faintCancelled)
+            usingToy = faintToy;
 
         if (usingToy == null || windRoot == null || windFill == null)
             return false;
