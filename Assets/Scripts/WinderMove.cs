@@ -1,3 +1,4 @@
+using Unity.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -18,6 +19,13 @@ public class WinderMove : MonoBehaviour
     private WinderAnimation animationController;
 
     private float moveSpeed = 6f;
+    [Tooltip("이 높이보다 낮은 턱은 점프 없이 걸어 올라갑니다. 단위는 미터입니다.")]
+    [SerializeField] private float walkLipHeight = 0.45f;
+    int physicsBodyId;
+    int stepFrame = -1;
+    float cachedFeetY;
+    Vector3 cachedWish;
+    bool cachedCanStep;
     [SerializeField] private float proneMoveSpeedMultiplier = 0.5f;
     private float sensitivity = 200f;
 
@@ -97,6 +105,10 @@ public class WinderMove : MonoBehaviour
         animationController = GetComponent<WinderAnimation>();
         rb = GetComponent<Rigidbody>();
         bodyCollider = GetComponent<Collider>();
+        if (rb != null)
+            physicsBodyId = rb.GetInstanceID();
+        if (bodyCollider != null)
+            bodyCollider.hasModifiableContacts = true;
         CacheStandCollider();
         CacheSpring();
         TickToyMove.KeepOneAudioListener();
@@ -223,8 +235,14 @@ public class WinderMove : MonoBehaviour
             rb.isKinematic = false;
     }
 
+    void OnEnable()
+    {
+        Physics.ContactModifyEvent += ModifyStepContacts;
+    }
+
     void FixedUpdate()
     {
+        RefreshStepCache();
         if (jumpCooldown > 0f)
             jumpCooldown -= Time.fixedDeltaTime;
 
@@ -268,7 +286,15 @@ public class WinderMove : MonoBehaviour
             }
         }
 
+        if (MoveInput.sqrMagnitude > 0.01f && StepOverLowSeam(PlanarVelocity()))
+            isGrounded = true;
+
         KeepStep();
+    }
+
+    void OnCollisionStay(Collision collision)
+    {
+        ClimbLowContact(collision, PlanarVelocity());
     }
 
     void Update()
@@ -563,6 +589,14 @@ public class WinderMove : MonoBehaviour
         return Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame;
     }
 
+    bool PressedTurnAround()
+    {
+        if (Input.GetKeyDown(KeyCode.F))
+            return true;
+
+        return Keyboard.current != null && Keyboard.current.fKey.wasPressedThisFrame;
+    }
+
     bool PressedMoveKeyDown()
     {
         return Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.A) || Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.D)
@@ -717,10 +751,12 @@ public class WinderMove : MonoBehaviour
 
     void Move()
     {
-        if (!isGrounded)
+        Vector3 planar = PlanarVelocity();
+        bool stepped = planar.sqrMagnitude > 0.01f && StepOverLowSeam(planar);
+        bool feetStill = rb == null || Mathf.Abs(rb.linearVelocity.y) <= 1.5f;
+        if (!isGrounded && !stepped && !feetStill)
             return;
 
-        Vector3 planar = PlanarVelocity();
         if (rb != null && !rb.isKinematic)
         {
             Vector3 velocity = rb.linearVelocity;
@@ -762,6 +798,14 @@ public class WinderMove : MonoBehaviour
     {
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
+
+        if (PressedTurnAround())
+        {
+            Quaternion turned = Quaternion.Euler(0f, transform.eulerAngles.y + 180f, 0f);
+            transform.rotation = turned;
+            if (rb != null && !rb.isKinematic)
+                rb.rotation = turned;
+        }
 
         transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
 
@@ -840,6 +884,7 @@ public class WinderMove : MonoBehaviour
 
     void OnDisable()
     {
+        Physics.ContactModifyEvent -= ModifyStepContacts;
         ReleaseStep();
     }
 
@@ -887,13 +932,218 @@ public class WinderMove : MonoBehaviour
         return step != null;
     }
 
+    void RefreshStepCache()
+    {
+        cachedCanStep = false;
+        cachedFeetY = bodyCollider != null ? bodyCollider.bounds.min.y : transform.position.y;
+        if (State == WinderState.Dead || rb == null || rb.isKinematic || jumpLock > 0f)
+            return;
+        if (rb.linearVelocity.y > 1.5f)
+            return;
+
+        Vector3 wish = PlanarVelocity();
+        wish.y = 0f;
+        if (wish.sqrMagnitude < 0.0001f)
+            return;
+
+        cachedWish = wish;
+        cachedCanStep = !TallWallAhead(wish);
+    }
+
+    void ClimbLowContact(Collision collision, Vector3 planar)
+    {
+        if (collision == null || collision.contactCount == 0)
+            return;
+        StepOverLowSeam(planar);
+    }
+
+    void ModifyStepContacts(PhysicsScene scene, NativeArray<ModifiableContactPair> pairs)
+    {
+        if (!cachedCanStep || physicsBodyId == 0)
+            return;
+
+        float lip = Mathf.Max(0.05f, walkLipHeight);
+        float feet = cachedFeetY;
+        Vector3 wish = cachedWish;
+        wish.y = 0f;
+        if (wish.sqrMagnitude < 0.0001f)
+            return;
+        wish.Normalize();
+
+        for (int p = 0; p < pairs.Length; p++)
+        {
+            ModifiableContactPair pair = pairs[p];
+            bool first = pair.bodyInstanceID == physicsBodyId;
+            bool second = pair.otherBodyInstanceID == physicsBodyId;
+            if (!first && !second)
+                continue;
+            if ((first ? pair.otherBodyInstanceID : pair.bodyInstanceID) != 0)
+                continue;
+
+            bool tall = false;
+            bool lowBlock = false;
+            for (int i = 0; i < pair.contactCount; i++)
+            {
+                Vector3 normal = pair.GetNormal(i);
+                Vector3 towardUs = first ? normal : -normal;
+                if (towardUs.y > 0.45f)
+                    continue;
+                if (pair.GetPoint(i).y > feet + lip)
+                {
+                    tall = true;
+                    break;
+                }
+                if (Vector3.Dot(wish, towardUs) < -0.15f)
+                    lowBlock = true;
+            }
+
+            if (tall || !lowBlock)
+                continue;
+
+            Vector3 stepNormal = first ? Vector3.up : Vector3.down;
+            for (int i = 0; i < pair.contactCount; i++)
+            {
+                Vector3 normal = pair.GetNormal(i);
+                Vector3 towardUs = first ? normal : -normal;
+                if (towardUs.y > 0.45f || pair.GetPoint(i).y > feet + lip)
+                    continue;
+                pair.SetNormal(i, stepNormal);
+                pair.SetSeparation(i, -0.12f);
+            }
+
+            pairs[p] = pair;
+        }
+    }
+
+    bool TallWallAhead(Vector3 wish)
+    {
+        Vector3 dir = wish;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f || bodyCollider == null)
+            return false;
+        dir.Normalize();
+
+        Bounds bounds = bodyCollider.bounds;
+        float front = Mathf.Max(bounds.extents.x, bounds.extents.z);
+        float lip = Mathf.Max(0.05f, walkLipHeight);
+        Vector3 from = new Vector3(bounds.center.x, bounds.min.y + lip + 0.25f, bounds.center.z) + dir * (front * 0.4f);
+        if (!Physics.Raycast(from, dir, out RaycastHit wall, front + 0.5f, ~0, QueryTriggerInteraction.Ignore))
+            return false;
+        if (IsOwnCollider(wall.collider) || wall.collider.attachedRigidbody != null)
+            return false;
+        return wall.normal.y < 0.45f;
+    }
+
+    bool IsOwnCollider(Collider other)
+    {
+        return other != null && (other.transform == transform || other.transform.IsChildOf(transform));
+    }
+
+    bool StepOverLowSeam(Vector3 planar)
+    {
+        if (rb == null || rb.isKinematic || bodyCollider == null)
+            return false;
+        if (rb.linearVelocity.y > 1.5f)
+            return false;
+        if (Time.frameCount == stepFrame)
+            return true;
+
+        Vector3 dir = planar;
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f)
+            return false;
+        dir.Normalize();
+
+        float lip = Mathf.Max(0.05f, walkLipHeight);
+        if (!TryAheadRise(dir, bodyCollider.bounds, lip, out float rise, out float distance))
+            return false;
+
+        Vector3 position = rb.position;
+        position.y += rise + 0.05f;
+        position += dir * Mathf.Clamp(distance + 0.05f, 0.04f, 0.2f);
+        rb.position = position;
+        Vector3 velocity = rb.linearVelocity;
+        velocity.x = planar.x;
+        velocity.z = planar.z;
+        if (velocity.y < 0f)
+            velocity.y = 0f;
+        rb.linearVelocity = velocity;
+        isGrounded = true;
+        stepFrame = Time.frameCount;
+        return true;
+    }
+
+    bool TryAheadRise(Vector3 dir, Bounds bounds, float lip, out float rise, out float distance)
+    {
+        rise = 0f;
+        distance = 0f;
+        float feet = bounds.min.y;
+        float front = Mathf.Max(bounds.extents.x, bounds.extents.z);
+        Vector3 side = Vector3.Cross(Vector3.up, dir);
+        float[] distances = { 0.02f, 0.1f, 0.22f };
+        float[] sides = { 0f, 0.45f, -0.45f };
+        for (int d = 0; d < distances.Length; d++)
+        {
+            float best = -1f;
+            for (int s = 0; s < sides.Length; s++)
+            {
+                Vector3 origin = new Vector3(bounds.center.x, feet + lip + 0.25f, bounds.center.z)
+                    + dir * (front + distances[d])
+                    + side * sides[s];
+                if (!Physics.Raycast(origin, Vector3.down, out RaycastHit top, lip + 0.6f, ~0, QueryTriggerInteraction.Ignore))
+                    continue;
+                if (IsOwnCollider(top.collider) || top.collider.attachedRigidbody != null)
+                    continue;
+                if (top.normal.y < 0.45f)
+                    continue;
+
+                float found = top.point.y - feet;
+                if (found > lip || found < 0.02f)
+                    continue;
+                if (found > best)
+                    best = found;
+            }
+
+            if (best < 0.02f)
+                continue;
+
+            rise = best;
+            distance = distances[d];
+            return true;
+        }
+
+        return false;
+    }
+
     bool ProbeGround()
     {
         if (bodyCollider == null || !bodyCollider.enabled)
             return false;
 
-        Vector3 origin = new Vector3(bodyCollider.bounds.center.x, bodyCollider.bounds.min.y + 0.2f, bodyCollider.bounds.center.z);
-        int count = Physics.RaycastNonAlloc(origin, Vector3.down, GroundHits, 0.35f, ~0, QueryTriggerInteraction.Ignore);
+        Bounds bounds = bodyCollider.bounds;
+        float y = bounds.min.y + 0.25f;
+        Vector3 forward = transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.0001f)
+            forward = Vector3.forward;
+        else
+            forward.Normalize();
+        Vector3 right = Vector3.Cross(Vector3.up, forward);
+
+        if (GroundAt(bounds.center.x, y, bounds.center.z))
+            return true;
+        if (GroundAt(bounds.center.x + forward.x * 0.28f, y, bounds.center.z + forward.z * 0.28f))
+            return true;
+        if (GroundAt(bounds.center.x - forward.x * 0.18f, y, bounds.center.z - forward.z * 0.18f))
+            return true;
+        if (GroundAt(bounds.center.x + right.x * 0.22f, y, bounds.center.z + right.z * 0.22f))
+            return true;
+        return GroundAt(bounds.center.x - right.x * 0.22f, y, bounds.center.z - right.z * 0.22f);
+    }
+
+    bool GroundAt(float x, float y, float z)
+    {
+        int count = Physics.RaycastNonAlloc(new Vector3(x, y, z), Vector3.down, GroundHits, 0.5f, ~0, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < count; i++)
         {
             Transform hit = GroundHits[i].collider.transform;

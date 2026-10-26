@@ -94,6 +94,8 @@ public class TickToyAnimation : MonoBehaviour
         animator.SetBool("IsWinding", false);
         move.IsWinding = false;
         SetSpineSpringsActive(false);
+        if (run)
+            ApplyRunDirection(move.MoveInput);
         animator.SetInteger("State", run ? 1 : 0);
         animator.CrossFadeInFixedTime(run ? "Run" : "Idle", 0.15f, 0, 0f);
         if (Input.GetMouseButton(0))
@@ -298,7 +300,17 @@ public class TickToyAnimation : MonoBehaviour
 
     public void SetMove(bool isMove)
     {
+        if (isMove)
+            ApplyRunDirection(move.MoveInput);
         animator.SetInteger("State", isMove ? 1 : 0);
+    }
+
+    void ApplyRunDirection(Vector2 input)
+    {
+        if (input.sqrMagnitude > 1f)
+            input.Normalize();
+        animator.SetFloat("MoveX", input.x);
+        animator.SetFloat("MoveY", input.y);
     }
 
     public void SetProne(bool isProne)
