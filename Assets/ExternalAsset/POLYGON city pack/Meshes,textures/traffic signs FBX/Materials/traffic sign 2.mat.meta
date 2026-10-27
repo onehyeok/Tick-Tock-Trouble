@@ -13,6 +13,6 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/traffic signs FBX/Materials/traffic
-    sign 2.mat
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/traffic signs
+    FBX/Materials/traffic sign 2.mat
   uploadId: 658773

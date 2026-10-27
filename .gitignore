@@ -73,3 +73,9 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# Unity crash recovery & local scene backups (can exceed GitHub 100MB)
+/[Aa]ssets/_Recovery/
+*.unity.bak*
+*.unity.tmp
+DemoScene.unity.bak*

@@ -103,5 +103,5 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/ways_FBX/WalkWay_01.fbx
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/ways_FBX/WalkWay_01.fbx
   uploadId: 658773

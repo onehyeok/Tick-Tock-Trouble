@@ -163,5 +163,5 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/Buildings_FBX/Building_O.fbx
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/Buildings_FBX/Building_O.fbx
   uploadId: 658773

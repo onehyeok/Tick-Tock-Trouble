@@ -13,6 +13,6 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/props_FBX/Materials/light 2
-    b.mat
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/props_FBX/Materials/light
+    2 b.mat
   uploadId: 658773

@@ -103,5 +103,6 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/traffic signs FBX/slow sign.fbx
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/traffic signs
+    FBX/slow sign.fbx
   uploadId: 658773

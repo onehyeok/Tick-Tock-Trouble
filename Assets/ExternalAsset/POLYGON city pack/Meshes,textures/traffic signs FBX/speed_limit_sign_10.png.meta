@@ -88,5 +88,6 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/traffic signs FBX/speed_limit_sign_10.png
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/traffic signs
+    FBX/speed_limit_sign_10.png
   uploadId: 658773

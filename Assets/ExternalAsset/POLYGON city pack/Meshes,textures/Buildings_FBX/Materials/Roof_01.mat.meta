@@ -13,5 +13,5 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/Buildings_FBX/Materials/Roof_01.mat
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/Buildings_FBX/Materials/Roof_01.mat
   uploadId: 658773

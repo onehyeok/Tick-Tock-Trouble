@@ -193,5 +193,5 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Meshes,textures/Buildings_FBX/Police_station.fbx
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/Buildings_FBX/Police_station.fbx
   uploadId: 658773

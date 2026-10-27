@@ -13,5 +13,6 @@ AssetOrigin:
   productId: 107224
   packageName: CITY package
   packageVersion: 1.0
-  assetPath: Assets/POLYGON city pack/Materials/Material_meshs/street 17.mat
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Materials/Material_meshs/street
+    17.mat
   uploadId: 658773

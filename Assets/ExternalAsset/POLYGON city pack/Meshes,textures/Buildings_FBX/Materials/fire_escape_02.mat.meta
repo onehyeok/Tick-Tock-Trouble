@@ -8,3 +8,10 @@ NativeFormatImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 107224
+  packageName: CITY package
+  packageVersion: 1.0
+  assetPath: Assets/ExternalAsset/POLYGON city pack/Meshes,textures/Buildings_FBX/Materials/fire_escape_02.mat
+  uploadId: 658773
