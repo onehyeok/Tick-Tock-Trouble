@@ -30,7 +30,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -5.85, y: 0, z: 11.73}
-  m_LocalScale: {x: 1.8, y: 1.8, z: 1.8}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 8620766193540623769}
@@ -56,8 +56,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 1.6, z: 0.4}
-  m_Center: {x: 0, y: 0.8, z: 0}
+  m_Size: {x: 0.7, y: 1.5, z: 0.4}
+  m_Center: {x: 0, y: 0.75, z: 0}
 --- !u!54 &1777454032817447282
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -103,6 +103,7 @@ MonoBehaviour:
   cameraLookAhead: 0.2
   cameraStartPitch: 12
   moveSpeed: 5
+  walkLipHeight: 0.45
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
 --- !u!114 &7458182634292479204

@@ -543,11 +543,13 @@ public class TickToyMove : MonoBehaviour
 
     void Move(float speedScale)
     {
-        Vector3 planar = PlanarVelocity(speedScale);
-        bool stepped = planar.sqrMagnitude > 0.01f && StepOverLowSeam(planar);
-        bool feetStill = rb == null || Mathf.Abs(rb.linearVelocity.y) <= 1.5f;
-        if (!isGrounded && !stepped && !feetStill)
+        // No mid-air WASD steering. Jump() already baked held W/S/A/D into planar velocity.
+        if (!isGrounded)
             return;
+
+        Vector3 planar = PlanarVelocity(speedScale);
+        if (planar.sqrMagnitude > 0.01f)
+            StepOverLowSeam(planar);
 
         if (rb != null)
         {

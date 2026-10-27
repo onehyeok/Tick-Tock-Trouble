@@ -751,11 +751,13 @@ public class WinderMove : MonoBehaviour
 
     void Move()
     {
-        Vector3 planar = PlanarVelocity();
-        bool stepped = planar.sqrMagnitude > 0.01f && StepOverLowSeam(planar);
-        bool feetStill = rb == null || Mathf.Abs(rb.linearVelocity.y) <= 1.5f;
-        if (!isGrounded && !stepped && !feetStill)
+        // No mid-air WASD steering. Jump() already baked held W/S/A/D into planar velocity.
+        if (!isGrounded)
             return;
+
+        Vector3 planar = PlanarVelocity();
+        if (planar.sqrMagnitude > 0.01f)
+            StepOverLowSeam(planar);
 
         if (rb != null && !rb.isKinematic)
         {
