@@ -223,7 +223,7 @@ public class WinderAnimation : MonoBehaviour
         if (hit == null || hit.transform == transform || hit.transform.IsChildOf(transform))
             return;
 
-        bool gold = IsUsingGoldenClub();
+        bool gold = move != null && move.IsGoldenClub;
         int damage = gold ? GoldDamage : NormalDamage;
 
         // 분신·맵 AI = TickToyAI → 대상 -25(황금 -100), 일반 몽둥이면 와인더도 -25
@@ -239,29 +239,12 @@ public class WinderAnimation : MonoBehaviour
             return;
         }
 
-        // 진짜 TickToy → 대상만 피해, 와인더 자해 없음
+        // 진짜 TickToy → 대상만 피해(황금이면 -100), 와인더 자해 없음
         TickToyMove toy = hit.GetComponentInParent<TickToyMove>();
         if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))
             return;
 
         toy.TakeHit(damage);
-    }
-
-    bool IsUsingGoldenClub()
-    {
-        Transform[] transforms = GetComponentsInChildren<Transform>(true);
-        for (int i = 0; i < transforms.Length; i++)
-        {
-            Transform t = transforms[i];
-            if (t == null || !t.gameObject.activeInHierarchy)
-                continue;
-            if (t.name.IndexOf("BrickGoldWeapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-            if (t.name.IndexOf("GoldWeapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                return true;
-        }
-
-        return false;
     }
 
     void Jump()

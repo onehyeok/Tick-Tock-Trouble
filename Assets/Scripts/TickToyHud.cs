@@ -8,7 +8,8 @@ public class TickToyHud : MonoBehaviour
         None,
         Run,
         Faint,
-        Duplicate
+        Duplicate,
+        OneHit
     }
 
     [Header("Status")]
@@ -25,6 +26,7 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Sprite runAbilityIcon;
     [SerializeField] private Sprite faintAbilityIcon;
     [SerializeField] private Sprite duplicateAbilityIcon;
+    [SerializeField] private Sprite oneHitAbilityIcon;
     [SerializeField] private Sprite zeroAbilityIcon;
 
     [Header("UI")]
@@ -289,9 +291,12 @@ public class TickToyHud : MonoBehaviour
             abilityKind = AbilityKind.Faint;
         else if (kind == 3)
             abilityKind = AbilityKind.Duplicate;
+        else if (kind == 4)
+            abilityKind = AbilityKind.OneHit;
         else
             abilityKind = AbilityKind.Run;
-        abilityLevel = Mathf.Clamp(level, 1, 3);
+        // 황금 몽둥이는 레벨 없음
+        abilityLevel = abilityKind == AbilityKind.OneHit ? 1 : Mathf.Clamp(level, 1, 3);
         ShowAbility();
     }
 
@@ -394,7 +399,11 @@ public class TickToyHud : MonoBehaviour
             sprite = faintAbilityIcon;
         else if (abilityKind == AbilityKind.Duplicate)
             sprite = duplicateAbilityIcon;
-        abilityIconRoot.SetActive(true);
+        else if (abilityKind == AbilityKind.OneHit)
+            sprite = oneHitAbilityIcon;
+
+        if (abilityIconRoot != null)
+            abilityIconRoot.SetActive(true);
         if (abilityIcon != null)
         {
             abilityIcon.sprite = sprite;
@@ -408,6 +417,8 @@ public class TickToyHud : MonoBehaviour
                 abilityFallbackText.text = "기절하기";
             else if (abilityKind == AbilityKind.Duplicate)
                 abilityFallbackText.text = "분신술";
+            else if (abilityKind == AbilityKind.OneHit)
+                abilityFallbackText.text = "황금 몽둥이";
             else
                 abilityFallbackText.text = "달리기";
             abilityFallbackText.gameObject.SetActive(sprite == null);
@@ -415,14 +426,22 @@ public class TickToyHud : MonoBehaviour
 
         if (levelText != null)
         {
-            levelText.gameObject.SetActive(true);
-            levelText.text = "Lv " + abilityLevel;
-            if (abilityLevel <= 1)
-                levelText.color = Color.white;
-            else if (abilityLevel == 2)
-                levelText.color = new Color(0.25f, 0.58f, 1f, 1f);
+            // Brick 황금 몽둥이: 레벨 표시 없음
+            if (abilityKind == AbilityKind.OneHit)
+            {
+                levelText.gameObject.SetActive(false);
+            }
             else
-                levelText.color = new Color(0.96f, 0.18f, 0.16f, 1f);
+            {
+                levelText.gameObject.SetActive(true);
+                levelText.text = "Lv " + abilityLevel;
+                if (abilityLevel <= 1)
+                    levelText.color = Color.white;
+                else if (abilityLevel == 2)
+                    levelText.color = new Color(0.25f, 0.58f, 1f, 1f);
+                else
+                    levelText.color = new Color(0.96f, 0.18f, 0.16f, 1f);
+            }
         }
     }
 

@@ -65,6 +65,10 @@ public class WinderMove : MonoBehaviour
     private Quaternion springBaseRotation;
     private float springDegrees;
     private const float FullTurnSeconds = 10f;
+    private const int AbilityRun = 1;
+    private const int AbilityGold = 4; // Brick 황금 몽둥이 (레벨 없음)
+    private const string GoldWeaponPath = "Assets/Models/BrickGoldWeapon/BrickGoldWeapon/BrickGoldWeapon.fbx";
+
     private int abilityKind;
     private int abilityLevel;
     private float runTimeLeft;
@@ -73,8 +77,13 @@ public class WinderMove : MonoBehaviour
     private bool faintOnGround;
     private float freezeTimeLeft;
     private bool freezeHeldBody;
+    private bool goldClubActive;
+    private Transform normalWeapon;
+    private GameObject goldWeaponInstance;
+    [SerializeField] private GameObject brickGoldWeaponPrefab;
 
     public bool IsFrozen => freezeTimeLeft > 0f;
+    public bool IsGoldenClub => goldClubActive;
 
     public Transform Spring
     {
@@ -143,6 +152,7 @@ public class WinderMove : MonoBehaviour
             bodyCollider.hasModifiableContacts = true;
         CacheStandCollider();
         CacheSpring();
+        CacheNormalWeapon();
         TickToyMove.KeepOneAudioListener();
     }
 
@@ -227,7 +237,9 @@ public class WinderMove : MonoBehaviour
         Transform current = target;
         while (current != null && current != transform)
         {
-            if (current.name.StartsWith("BrickWeapon") || current.name.StartsWith("Spring"))
+            if (current.name.StartsWith("BrickWeapon")
+                || current.name.StartsWith("BrickGoldWeapon")
+                || current.name.StartsWith("Spring"))
                 return true;
 
             current = current.parent;
@@ -393,7 +405,10 @@ public class WinderMove : MonoBehaviour
         Transform[] transforms = GetComponentsInChildren<Transform>(true);
         for (int i = 0; i < transforms.Length; i++)
         {
-            if (!transforms[i].name.StartsWith("BrickWeapon"))
+            string n = transforms[i].name;
+            if (!n.StartsWith("BrickWeapon") && !n.StartsWith("BrickGoldWeapon"))
+                continue;
+            if (!transforms[i].gameObject.activeInHierarchy)
                 continue;
             weapon = transforms[i];
             break;
@@ -502,15 +517,20 @@ public class WinderMove : MonoBehaviour
 
     void CompleteSpringTurn()
     {
-        if (abilityLevel >= 3)
+        // Brick 풀: 달리기 + 황금 몽둥이만 (드러눕기/기절 제외)
+        // 황금은 레벨 없음 — 이미 들고 있으면 다음 턴까지 유지
+        if (abilityKind == AbilityGold && abilityLevel > 0)
+            return;
+
+        if (abilityKind == AbilityRun && abilityLevel >= 3)
             return;
 
         if (abilityLevel <= 0)
         {
-            abilityKind = Random.Range(0, 2) == 0 ? 1 : 2;
+            abilityKind = Random.value < 0.5f ? AbilityRun : AbilityGold;
             abilityLevel = 1;
         }
-        else
+        else if (abilityKind == AbilityRun)
             abilityLevel++;
 
         if (hud != null)
@@ -529,10 +549,68 @@ public class WinderMove : MonoBehaviour
         if (hud != null)
             hud.ClearPresentedAbility();
 
-        if (kind == 1)
+        if (kind == AbilityRun)
             UseRunAbility(level);
-        else if (kind == 2)
-            UseFaintAbility(level);
+        else if (kind == AbilityGold)
+            UseGoldClubAbility();
+    }
+
+    void UseGoldClubAbility()
+    {
+        if (State == WinderState.Dead)
+            return;
+
+        EquipGoldWeapon();
+        goldClubActive = true;
+    }
+
+    void EquipGoldWeapon()
+    {
+        if (normalWeapon == null)
+            CacheNormalWeapon();
+
+        if (normalWeapon != null)
+            normalWeapon.gameObject.SetActive(false);
+
+        if (goldWeaponInstance != null)
+        {
+            goldWeaponInstance.SetActive(true);
+            return;
+        }
+
+        GameObject prefab = brickGoldWeaponPrefab;
+#if UNITY_EDITOR
+        if (prefab == null)
+            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GoldWeaponPath);
+#endif
+        if (prefab == null)
+            prefab = Resources.Load<GameObject>("BrickGoldWeapon");
+
+        if (prefab == null || normalWeapon == null)
+        {
+            Debug.LogWarning("[WinderMove] BrickGoldWeapon 을 불러오지 못했습니다.");
+            return;
+        }
+
+        goldWeaponInstance = Instantiate(prefab, normalWeapon.parent);
+        goldWeaponInstance.name = "BrickGoldWeapon";
+        goldWeaponInstance.transform.localPosition = normalWeapon.localPosition;
+        goldWeaponInstance.transform.localRotation = normalWeapon.localRotation;
+        goldWeaponInstance.transform.localScale = normalWeapon.localScale;
+        goldWeaponInstance.SetActive(true);
+    }
+
+    void CacheNormalWeapon()
+    {
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i] != null && transforms[i].name.StartsWith("BrickWeapon"))
+            {
+                normalWeapon = transforms[i];
+                return;
+            }
+        }
     }
 
     void UseRunAbility(int level)

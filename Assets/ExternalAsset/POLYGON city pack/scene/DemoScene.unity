@@ -420810,6 +420810,7 @@ MonoBehaviour:
   runAbilityIcon: {fileID: 21300000, guid: 19bea5ec28c414c4d8867e67f3ff483c, type: 3}
   faintAbilityIcon: {fileID: 21300000, guid: 78f06957ebb0c2b439d819109d25a8a0, type: 3}
   duplicateAbilityIcon: {fileID: 21300000, guid: 32d79cc6be7abb241b0f2f2854846164, type: 3}
+  oneHitAbilityIcon: {fileID: 21300000, guid: 1bd71f4141f041a41840725ef52c847f, type: 3}
   zeroAbilityIcon: {fileID: 21300000, guid: a2f1a321f9f72f34180a50a3ca762f66, type: 3}
   countText: {fileID: 8200001106}
   roundText: {fileID: 8200001206}
