@@ -564,6 +564,22 @@ public class WinderMove : MonoBehaviour
         goldClubActive = true;
     }
 
+    /// <summary>황금 몽둥이로 누구든 맞추면 능력 종료 → 기본 무기 복귀.</summary>
+    public void ConsumeGoldClubOnHit()
+    {
+        if (!goldClubActive)
+            return;
+
+        goldClubActive = false;
+        if (goldWeaponInstance != null)
+            goldWeaponInstance.SetActive(false);
+
+        if (normalWeapon == null)
+            CacheNormalWeapon();
+        if (normalWeapon != null)
+            normalWeapon.gameObject.SetActive(true);
+    }
+
     void EquipGoldWeapon()
     {
         if (normalWeapon == null)

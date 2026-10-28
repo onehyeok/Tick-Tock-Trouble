@@ -236,6 +236,8 @@ public class WinderAnimation : MonoBehaviour
             ai.TakeHit(damage);
             if (!gold && move != null)
                 move.TakeHit(NormalDamage);
+            if (gold && move != null)
+                move.ConsumeGoldClubOnHit();
             return;
         }
 
@@ -245,6 +247,8 @@ public class WinderAnimation : MonoBehaviour
             return;
 
         toy.TakeHit(damage);
+        if (gold && move != null)
+            move.ConsumeGoldClubOnHit();
     }
 
     void Jump()
