@@ -33,10 +33,9 @@ public class DemoSceneAIBootstrap : MonoBehaviour
     {
         EnsureSceneAudioListener();
         BuildTileBarriers();
+        // 한 프레임에 몰리지 않게 나눠 스폰 (시작 끊김 완화)
         yield return null;
-        // TickToyAI 는 NavMeshAgent 미사용(키네마틱 이동).
-        // 런타임 RenderMeshes 베이크는 Read/Write 없는 메시에 경고만 내고 빌드에선 깨짐 → 생략.
-        SpawnAIs();
+        yield return SpawnAIsOverFrames();
         EnsureSceneAudioListener();
         TickToyMove.KeepOneAudioListener();
     }
@@ -77,13 +76,13 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         builder.Build();
     }
 
-    void SpawnAIs()
+    IEnumerator SpawnAIsOverFrames()
     {
         GameObject[] prefabs = ResolvePrefabs();
         if (prefabs.Length == 0)
         {
             Debug.LogError("[DemoSceneAIBootstrap] TickToy 프리팹을 불러오지 못했습니다. tickToyPrefabs / Assets/Prefabs 확인.");
-            return;
+            yield break;
         }
 
         List<GameObject> spawnQueue = BuildBalancedQueue(prefabs, aiCount);
@@ -105,6 +104,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         int failHeight = 0;
         int failBuilding = 0;
         int failSpacing = 0;
+        const int perFrame = 2;
 
         List<Vector3> slots = BuildSpreadSlots(mapBounds, Mathf.Max(aiCount * 4, 80));
         int slotIndex = 0;
@@ -193,6 +193,9 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             ConvertToAI(instance, pos);
             placed.Add(pos);
             spawned++;
+
+            if (spawned % perFrame == 0)
+                yield return null;
         }
 
         Debug.Log($"[DemoSceneAIBootstrap] AI {spawned}/{aiCount} 스폰. 실패 ground={failGround} height={failHeight} building={failBuilding} spacing={failSpacing}");
