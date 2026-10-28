@@ -104,9 +104,15 @@ public class TickToyAI : MonoBehaviour
     void ForceToGround(bool hard)
     {
         float preferY = transform.position.y;
-        TickToyMove player = FindAnyObjectByType<TickToyMove>();
-        if (player != null)
-            preferY = player.transform.position.y;
+        TickToyMove tickToy = FindAnyObjectByType<TickToyMove>();
+        if (tickToy != null)
+            preferY = tickToy.transform.position.y;
+        else
+        {
+            WinderMove winder = FindAnyObjectByType<WinderMove>();
+            if (winder != null)
+                preferY = winder.transform.position.y;
+        }
 
         if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(transform.position, preferY, out Vector3 ground))
         {
@@ -118,10 +124,9 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
-        if (hard && player != null)
+        if (hard)
         {
-            // 최후: 플레이어와 같은 높이
-            lockedGroundY = player.transform.position.y;
+            lockedGroundY = preferY;
             Vector3 p = transform.position;
             p.y = lockedGroundY;
             if (rb != null)

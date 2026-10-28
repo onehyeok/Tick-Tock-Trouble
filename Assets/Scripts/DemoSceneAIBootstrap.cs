@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Generic;
-using Unity.AI.Navigation;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -35,8 +34,8 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         EnsureSceneAudioListener();
         BuildTileBarriers();
         yield return null;
-        BakeNavMeshSafe();
-        yield return null;
+        // TickToyAI 는 NavMeshAgent 미사용(키네마틱 이동).
+        // 런타임 RenderMeshes 베이크는 Read/Write 없는 메시에 경고만 내고 빌드에선 깨짐 → 생략.
         SpawnAIs();
         EnsureSceneAudioListener();
         TickToyMove.KeepOneAudioListener();
@@ -76,35 +75,6 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         if (builder == null)
             builder = gameObject.AddComponent<TileEdgeBarrierBuilder>();
         builder.Build();
-    }
-
-    void BakeNavMeshSafe()
-    {
-        try
-        {
-            NavMeshSurface surface = gameObject.GetComponent<NavMeshSurface>();
-            if (surface == null)
-                surface = gameObject.AddComponent<NavMeshSurface>();
-
-            surface.collectObjects = CollectObjects.All;
-            surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
-            surface.ignoreNavMeshAgent = true;
-            surface.BuildNavMesh();
-            if (!HasAnyNavMesh())
-            {
-                surface.useGeometry = NavMeshCollectGeometry.RenderMeshes;
-                surface.BuildNavMesh();
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning("[DemoSceneAIBootstrap] NavMesh 베이크 실패: " + e.Message);
-        }
-    }
-
-    static bool HasAnyNavMesh()
-    {
-        return NavMesh.SamplePosition(new Vector3(-93f, 14f, 36f), out _, 80f, NavMesh.AllAreas);
     }
 
     void SpawnAIs()
@@ -404,11 +374,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
     bool TryGetMapBounds(out Bounds bounds, out float preferY)
     {
         bounds = new Bounds();
-        preferY = spawnCenterFallback.y;
-
-        TickToyMove player = FindAnyObjectByType<TickToyMove>();
-        if (player != null)
-            preferY = player.transform.position.y;
+        preferY = ResolvePreferY();
 
         GameObject floors = GameObject.Find("Floors");
         if (floors == null)
@@ -443,10 +409,24 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         if (!any)
             return false;
 
-        if (player == null)
-            preferY = bounds.center.y;
-
         return true;
+    }
+
+    /// <summary>
+    /// 스폰 높이 기준: TickToy → Winder(Brick) → fallback.
+    /// TickToy만 끄고 Brick만 켠 테스트에서도 AI가 나오게.
+    /// </summary>
+    float ResolvePreferY()
+    {
+        TickToyMove tickToy = FindAnyObjectByType<TickToyMove>();
+        if (tickToy != null)
+            return tickToy.transform.position.y;
+
+        WinderMove winder = FindAnyObjectByType<WinderMove>();
+        if (winder != null)
+            return winder.transform.position.y;
+
+        return spawnCenterFallback.y;
     }
 
     /// <summary>
