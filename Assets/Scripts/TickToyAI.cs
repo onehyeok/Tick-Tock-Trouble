@@ -1,10 +1,8 @@
 using UnityEngine;
-using UnityEngine.AI;
 
 /// <summary>
-/// AI 태엽 장난감. Idle / Run / Prone / Jump(2또는3회)를 랜덤으로 이어 갑니다.
-/// 태엽 감기·E·능력은 하지 않습니다.
-/// NavMesh가 있으면 Agent로, 없으면 Rigidbody로 이동합니다.
+/// AI 태엽 장난감. Idle / Run / Prone / Jump(2또는3회) 랜덤.
+/// 항상 실제 지면(길/인도)에 붙습니다.
 /// </summary>
 public class TickToyAI : MonoBehaviour
 {
@@ -16,96 +14,115 @@ public class TickToyAI : MonoBehaviour
         Jump
     }
 
-    [SerializeField] private float walkSpeed = 2.4f;
-    [SerializeField] private float runSpeed = 4.2f;
+    [SerializeField] private float walkSpeed = 2.8f;
+    [SerializeField] private float runSpeed = 4.5f;
     [SerializeField] private float idleMin = 1.5f;
     [SerializeField] private float idleMax = 4f;
     [SerializeField] private float runMin = 3f;
     [SerializeField] private float runMax = 8f;
     [SerializeField] private float proneMin = 2f;
     [SerializeField] private float proneMax = 5f;
-    [SerializeField] private float roamRadius = 18f;
-    [SerializeField] private float jumpInterval = 0.45f;
+    [SerializeField] private float jumpInterval = 0.35f;
     [SerializeField] private int hp = 100;
 
-    NavMeshAgent agent;
+    // TicktoyMove 의 JumpPower(5.5)와 동일 — TickToy 쪽은 수정하지 않음
+    const float TickToyJumpPower = 5.5f;
+
     Rigidbody rb;
+    Collider bodyCollider;
     Animator animator;
     AiState state = AiState.Idle;
     float stateTimer;
     int jumpsLeft;
     float jumpTimer;
     bool dead;
-    bool useAgent;
+    bool settled;
+    float settleTimer = 0.15f;
     Vector3 moveDir = Vector3.forward;
     float currentSpeed;
+    float lockedGroundY;
+    bool jumpInAir;
+    float jumpElapsed;
+    float jumpDuration;
+    float jumpPeakHeight;
 
     public int Hp => hp;
     public bool IsDead => dead;
 
     void Awake()
     {
-        agent = GetComponent<NavMeshAgent>();
         rb = GetComponent<Rigidbody>();
+        bodyCollider = GetComponent<Collider>();
         animator = GetComponentInChildren<Animator>();
         if (animator != null)
             animator.applyRootMotion = false;
 
-        useAgent = agent != null && agent.enabled;
-        if (useAgent)
-        {
-            agent.speed = walkSpeed;
-            agent.angularSpeed = 360f;
-            agent.acceleration = 12f;
-            agent.stoppingDistance = 0.35f;
-            agent.obstacleAvoidanceType = ObstacleAvoidanceType.MedQualityObstacleAvoidance;
-        }
+        var agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+        if (agent != null)
+            agent.enabled = false;
 
         if (rb != null)
         {
+            rb.isKinematic = true;
+            rb.useGravity = false;
+            rb.detectCollisions = true;
             rb.constraints = RigidbodyConstraints.FreezeRotation;
-            if (useAgent)
-            {
-                rb.isKinematic = true;
-                rb.useGravity = false;
-            }
-            else
-            {
-                rb.isKinematic = false;
-                rb.useGravity = true;
-                rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
-            }
+            rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
         }
     }
 
     void Start()
     {
-        if (useAgent && agent != null && !agent.isOnNavMesh)
+        ForceToGround(true);
+        settled = false;
+        settleTimer = 0.15f;
+        EnterIdle();
+    }
+
+    void ForceToGround(bool hard)
+    {
+        float preferY = transform.position.y;
+        TickToyMove player = FindAnyObjectByType<TickToyMove>();
+        if (player != null)
+            preferY = player.transform.position.y;
+
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(transform.position, preferY, out Vector3 ground))
         {
-            if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 12f, NavMesh.AllAreas))
-            {
-                agent.Warp(hit.position);
-            }
-            else
-            {
-                // NavMesh 밖이면 Rigidbody 모드로 전환
-                useAgent = false;
-                agent.enabled = false;
-                if (rb != null)
-                {
-                    rb.isKinematic = false;
-                    rb.useGravity = true;
-                }
-            }
+            lockedGroundY = ground.y;
+            Vector3 p = new Vector3(transform.position.x, ground.y, transform.position.z);
+            if (rb != null)
+                rb.position = p;
+            transform.position = p;
+            return;
         }
 
-        EnterIdle();
+        if (hard && player != null)
+        {
+            // 최후: 플레이어와 같은 높이
+            lockedGroundY = player.transform.position.y;
+            Vector3 p = transform.position;
+            p.y = lockedGroundY;
+            if (rb != null)
+                rb.position = p;
+            transform.position = p;
+        }
     }
 
     void Update()
     {
         if (dead)
             return;
+
+        if (!settled)
+        {
+            settleTimer -= Time.deltaTime;
+            ForceToGround(true);
+            if (settleTimer <= 0f)
+                settled = true;
+            SetAnimMove(Vector2.zero, false);
+            return;
+        }
 
         switch (state)
         {
@@ -126,17 +143,130 @@ public class TickToyAI : MonoBehaviour
 
     void FixedUpdate()
     {
-        if (dead || useAgent || rb == null || state != AiState.Run)
+        if (dead || rb == null)
             return;
 
-        Vector3 vel = moveDir * currentSpeed;
-        vel.y = rb.linearVelocity.y;
-        rb.linearVelocity = vel;
+        SeparateFromPlayersOnly();
 
-        if (moveDir.sqrMagnitude > 0.01f)
+        if (jumpInAir)
         {
-            Quaternion look = Quaternion.LookRotation(moveDir, Vector3.up);
-            rb.MoveRotation(Quaternion.Slerp(rb.rotation, look, 10f * Time.fixedDeltaTime));
+            TickJumpMotion();
+            return;
+        }
+
+        // 점프 중이 아닐 때만 지면 Y 고정
+        StickYToGround();
+
+        if (!settled || state != AiState.Run || currentSpeed < 0.01f)
+            return;
+
+        Vector3 dir = moveDir;
+        if (IsBlocked(dir))
+        {
+            if (!TrySlideDir(out dir))
+            {
+                currentSpeed = 0f;
+                SetAnimMove(Vector2.zero, false);
+                return;
+            }
+            moveDir = dir;
+        }
+
+        if (!HasGroundAhead(moveDir))
+        {
+            PickRandomMoveDir();
+            return;
+        }
+
+        rb.MoveRotation(Quaternion.LookRotation(moveDir, Vector3.up));
+
+        Vector3 next = rb.position + moveDir * (currentSpeed * Time.fixedDeltaTime);
+        next.y = lockedGroundY;
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(next, lockedGroundY, out Vector3 g))
+        {
+            float dy = g.y - lockedGroundY;
+            if (dy > 0.4f)
+                dy = 0.4f;
+            if (dy < -0.4f)
+                dy = -0.4f;
+            lockedGroundY += dy;
+            next.y = lockedGroundY;
+        }
+
+        rb.MovePosition(next);
+        SetAnimMove(new Vector2(0f, 1f), false);
+    }
+
+    void TickJumpMotion()
+    {
+        jumpElapsed += Time.fixedDeltaTime;
+        float t = Mathf.Clamp01(jumpElapsed / jumpDuration);
+
+        // TicktoyMove 와 같은 물리 포물선: y = v0*t - 0.5*g*t^2
+        // 최고점 = JumpPower^2 / (2g)
+        float height = 4f * jumpPeakHeight * t * (1f - t);
+
+        Vector3 p = rb.position;
+        p.y = lockedGroundY + height;
+        rb.MovePosition(p);
+
+        if (t >= 1f)
+        {
+            p.y = lockedGroundY;
+            rb.MovePosition(p);
+            jumpInAir = false;
+            jumpTimer = jumpInterval;
+        }
+    }
+
+    static float ResolveGravity()
+    {
+        // TicktoyMove 점프 높이 계산과 동일한 중력 처리
+        float g = Mathf.Abs(Physics.gravity.y);
+        return g < 0.01f ? 12f : g;
+    }
+
+    void StickYToGround()
+    {
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(rb.position, lockedGroundY != 0f ? lockedGroundY : rb.position.y, out Vector3 g))
+        {
+            lockedGroundY = g.y;
+            Vector3 p = rb.position;
+            p.y = lockedGroundY;
+            rb.position = p;
+        }
+    }
+
+    void SeparateFromPlayersOnly()
+    {
+        if (bodyCollider == null)
+            return;
+
+        TickToyMove[] players = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < players.Length; i++)
+        {
+            TickToyMove player = players[i];
+            if (player == null)
+                continue;
+
+            Collider playerCol = player.GetComponent<Collider>();
+            if (playerCol == null || !playerCol.enabled)
+                continue;
+
+            if (Physics.ComputePenetration(
+                    bodyCollider, transform.position, transform.rotation,
+                    playerCol, playerCol.transform.position, playerCol.transform.rotation,
+                    out Vector3 direction, out float distance))
+            {
+                direction.y = 0f;
+                if (direction.sqrMagnitude < 0.0001f)
+                    continue;
+                direction.Normalize();
+                Vector3 separated = rb.position + direction * (distance + 0.01f);
+                if (!jumpInAir)
+                    separated.y = lockedGroundY;
+                rb.MovePosition(separated);
+            }
         }
     }
 
@@ -150,34 +280,10 @@ public class TickToyAI : MonoBehaviour
 
     void TickRun()
     {
-        if (useAgent && agent != null)
-        {
-            Vector3 flatVel = agent.velocity;
-            flatVel.y = 0f;
-            if (flatVel.sqrMagnitude > 0.05f)
-            {
-                Vector3 local = transform.InverseTransformDirection(flatVel.normalized);
-                SetAnimMove(new Vector2(local.x, local.z), false);
-            }
-            else
-            {
-                SetAnimMove(new Vector2(0f, 1f), false);
-            }
-
-            stateTimer -= Time.deltaTime;
-            bool arrived = !agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.15f;
-            if (stateTimer <= 0f || arrived)
-                PickNextAfterIdleOrRun();
-            return;
-        }
-
-        // Rigidbody 주행: 벽/낭떠러지 앞이면 방향 전환
-        SetAnimMove(new Vector2(0f, 1f), false);
-        if (Physics.Raycast(transform.position + Vector3.up * 0.4f, moveDir, 1.2f, ~0, QueryTriggerInteraction.Ignore)
-            || !Physics.Raycast(transform.position + moveDir * 1.1f + Vector3.up * 1.5f, Vector3.down, 3.5f, ~0, QueryTriggerInteraction.Ignore))
-        {
-            PickRandomMoveDir();
-        }
+        if (currentSpeed > 0.01f)
+            SetAnimMove(new Vector2(0f, 1f), false);
+        else
+            SetAnimMove(Vector2.zero, false);
 
         stateTimer -= Time.deltaTime;
         if (stateTimer <= 0f)
@@ -195,6 +301,9 @@ public class TickToyAI : MonoBehaviour
     void TickJump()
     {
         SetAnimMove(Vector2.zero, false);
+        if (jumpInAir)
+            return;
+
         jumpTimer -= Time.deltaTime;
         if (jumpTimer > 0f)
             return;
@@ -205,18 +314,23 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
-        if (animator != null)
-            animator.SetTrigger("Jump");
-        if (!useAgent && rb != null && IsGrounded())
-            rb.AddForce(Vector3.up * 4.5f, ForceMode.VelocityChange);
-
-        jumpsLeft--;
-        jumpTimer = jumpInterval;
+        StartHop();
     }
 
-    bool IsGrounded()
+    void StartHop()
     {
-        return Physics.Raycast(transform.position + Vector3.up * 0.2f, Vector3.down, 0.5f, ~0, QueryTriggerInteraction.Ignore);
+        StickYToGround();
+
+        float g = ResolveGravity();
+        // TicktoyMove: jumpHeight = (JumpPower * JumpPower) / (2f * gravity)
+        jumpPeakHeight = (TickToyJumpPower * TickToyJumpPower) / (2f * g);
+        jumpDuration = (2f * TickToyJumpPower) / g;
+        jumpElapsed = 0f;
+        jumpInAir = true;
+        jumpsLeft--;
+
+        if (animator != null)
+            animator.SetTrigger("Jump");
     }
 
     void PickNextAfterIdleOrRun()
@@ -241,7 +355,6 @@ public class TickToyAI : MonoBehaviour
         state = AiState.Idle;
         stateTimer = Random.Range(idleMin, idleMax);
         currentSpeed = 0f;
-        StopMovement();
         SetAnimMove(Vector2.zero, false);
     }
 
@@ -250,18 +363,12 @@ public class TickToyAI : MonoBehaviour
         state = AiState.Run;
         stateTimer = Random.Range(runMin, runMax);
         currentSpeed = Random.value < 0.35f ? runSpeed : walkSpeed;
-
-        if (useAgent && agent != null && agent.isOnNavMesh)
-        {
-            agent.isStopped = false;
-            agent.speed = currentSpeed;
-            if (TryPickDestination(out Vector3 dest))
-                agent.SetDestination(dest);
-        }
-        else
-        {
+        PickRandomMoveDir();
+        for (int i = 0; i < 8 && (IsBlocked(moveDir) || !HasGroundAhead(moveDir)); i++)
             PickRandomMoveDir();
-        }
+
+        if (rb != null)
+            rb.MoveRotation(Quaternion.LookRotation(moveDir, Vector3.up));
 
         SetAnimMove(new Vector2(0f, 1f), false);
     }
@@ -271,7 +378,6 @@ public class TickToyAI : MonoBehaviour
         state = AiState.Prone;
         stateTimer = Random.Range(proneMin, proneMax);
         currentSpeed = 0f;
-        StopMovement();
         SetAnimMove(Vector2.zero, true);
     }
 
@@ -280,49 +386,51 @@ public class TickToyAI : MonoBehaviour
         state = AiState.Jump;
         jumpsLeft = Random.value < 0.5f ? 2 : 3;
         jumpTimer = 0f;
+        jumpInAir = false;
         currentSpeed = 0f;
-        StopMovement();
         SetAnimMove(Vector2.zero, false);
-    }
-
-    void StopMovement()
-    {
-        if (useAgent && agent != null && agent.isOnNavMesh)
-        {
-            agent.isStopped = true;
-            agent.ResetPath();
-        }
-
-        if (rb != null && !rb.isKinematic)
-        {
-            Vector3 v = rb.linearVelocity;
-            v.x = 0f;
-            v.z = 0f;
-            rb.linearVelocity = v;
-        }
+        StartHop();
     }
 
     void PickRandomMoveDir()
     {
-        float yaw = Random.Range(0f, 360f);
-        moveDir = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        moveDir = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) * Vector3.forward;
     }
 
-    bool TryPickDestination(out Vector3 dest)
+    bool TrySlideDir(out Vector3 dir)
     {
-        dest = transform.position;
-        for (int i = 0; i < 12; i++)
+        Vector3 right = Vector3.Cross(Vector3.up, moveDir).normalized;
+        if (!IsBlocked(right) && HasGroundAhead(right))
         {
-            Vector2 circle = Random.insideUnitCircle * roamRadius;
-            Vector3 candidate = transform.position + new Vector3(circle.x, 0f, circle.y);
-            if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 4f, NavMesh.AllAreas))
-            {
-                dest = hit.position;
-                return true;
-            }
+            dir = right;
+            return true;
         }
 
+        if (!IsBlocked(-right) && HasGroundAhead(-right))
+        {
+            dir = -right;
+            return true;
+        }
+
+        dir = moveDir;
         return false;
+    }
+
+    bool IsBlocked(Vector3 dir)
+    {
+        Vector3 origin = transform.position + Vector3.up * 0.55f;
+        if (!Physics.SphereCast(origin, 0.25f, dir, out RaycastHit hit, 0.55f, ~0, QueryTriggerInteraction.Ignore))
+            return false;
+        if (hit.collider != null && hit.collider.transform.IsChildOf(transform))
+            return false;
+        return true;
+    }
+
+    bool HasGroundAhead(Vector3 dir)
+    {
+        Vector3 probe = transform.position + dir * 0.85f;
+        probe.y = lockedGroundY + 1f;
+        return AiGroundUtil.TryFindGroundNearPlayerOrWorld(probe, lockedGroundY, out _);
     }
 
     void SetAnimMove(Vector2 move, bool prone)
@@ -355,15 +463,7 @@ public class TickToyAI : MonoBehaviour
     {
         dead = true;
         hp = 0;
-        StopMovement();
-        if (agent != null)
-            agent.enabled = false;
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.isKinematic = true;
-        }
-
+        currentSpeed = 0f;
         if (animator != null)
             animator.SetTrigger("Die");
     }

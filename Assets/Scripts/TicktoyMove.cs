@@ -196,24 +196,67 @@ public class TickToyMove : MonoBehaviour
     public static void KeepOneAudioListener()
     {
         AudioListener[] listeners = FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+        // 이미 켜진 리스너가 있으면 그걸 유지하고, 나머지만 끔 (스폰 중 플레이어 리스너가 꺼지는 것 방지)
         AudioListener keep = null;
         for (int i = 0; i < listeners.Length; i++)
         {
-            if (listeners[i] != null && listeners[i].gameObject.activeInHierarchy)
+            AudioListener l = listeners[i];
+            if (l == null)
+                continue;
+            if (l.enabled && l.gameObject.activeInHierarchy)
             {
-                keep = listeners[i];
+                keep = l;
                 break;
+            }
+        }
+
+        if (keep == null)
+        {
+            for (int i = 0; i < listeners.Length; i++)
+            {
+                AudioListener l = listeners[i];
+                if (l != null && l.gameObject.activeInHierarchy && l.GetComponentInParent<TickToyAI>() == null)
+                {
+                    keep = l;
+                    break;
+                }
             }
         }
 
         if (keep == null && listeners.Length > 0)
             keep = listeners[0];
 
+        // 씬에 리스너가 아예 없으면 하나 생성 (경고 스팸 방지)
+        if (keep == null)
+        {
+            Camera main = Camera.main;
+            if (main != null)
+            {
+                keep = main.GetComponent<AudioListener>();
+                if (keep == null)
+                    keep = main.gameObject.AddComponent<AudioListener>();
+            }
+            else
+            {
+                GameObject go = GameObject.Find("SceneAudioListener");
+                if (go == null)
+                    go = new GameObject("SceneAudioListener");
+                keep = go.GetComponent<AudioListener>();
+                if (keep == null)
+                    keep = go.AddComponent<AudioListener>();
+            }
+            listeners = FindObjectsByType<AudioListener>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        }
+
         for (int i = 0; i < listeners.Length; i++)
         {
             if (listeners[i] != null)
                 listeners[i].enabled = listeners[i] == keep;
         }
+
+        if (keep != null)
+            keep.enabled = true;
     }
 
     void Start()
@@ -234,8 +277,13 @@ public class TickToyMove : MonoBehaviour
         Physics.ContactModifyEvent += ModifyStepContacts;
     }
 
+    Vector3 prePhysicsPos;
+
     void FixedUpdate()
     {
+        if (rb != null)
+            prePhysicsPos = rb.position;
+
         RefreshStepCache();
         if (jumpCooldown > 0f)
             jumpCooldown -= Time.fixedDeltaTime;
@@ -284,11 +332,44 @@ public class TickToyMove : MonoBehaviour
             isGrounded = true;
 
         KeepStep();
+
+        // AI 등 외부 충돌이 플레이어를 옆으로 밀지 못하게, 수평 속도는 입력만 반영
+        if (rb != null && isGrounded && State != TickToyState.Faint && State != TickToyState.Dead)
+        {
+            Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+            Vector3 velocity = rb.linearVelocity;
+            velocity.x = planar.x;
+            velocity.z = planar.z;
+            rb.linearVelocity = velocity;
+        }
     }
 
     void OnCollisionStay(Collision collision)
     {
         ClimbLowContact(collision, PlanarVelocity(State == TickToyState.Run ? 2f : 1f));
+
+        // AI와는 통과하지 않고 비비기만: AI가 플레이어를 밀면 위치/속도 되돌림
+        if (rb == null || collision == null)
+            return;
+        if (collision.collider.GetComponentInParent<TickToyAI>() == null)
+            return;
+
+        Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+        Vector3 v = rb.linearVelocity;
+        v.x = planar.x;
+        v.z = planar.z;
+        if (v.y > 0f && isGrounded)
+            v.y = 0f;
+        rb.linearVelocity = v;
+
+        // 입력으로 안 움직일 때 AI에게 밀려난 xz는 복구 (비비되 안 밀림)
+        if (planar.sqrMagnitude < 0.01f)
+        {
+            Vector3 p = rb.position;
+            p.x = prePhysicsPos.x;
+            p.z = prePhysicsPos.z;
+            rb.position = p;
+        }
     }
 
     void Update()
