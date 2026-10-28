@@ -79,7 +79,9 @@ public class TickToyMove : MonoBehaviour
     private bool faintOnGround;
     private float faintTimeLeft;
     private float duplicateTimeLeft;
-    private readonly List<GameObject> duplicates = new List<GameObject>();
+    // Instantiate 복제 시 원본 분신 리스트가 같이 복사·삭제되지 않게
+    [System.NonSerialized] private List<GameObject> duplicates = new List<GameObject>();
+    [System.NonSerialized] private bool skipClearDuplicates;
     private static Material duplicateCloudMaterial;
     private int grantedAbility;
     private int grantedLevel;
@@ -388,8 +390,13 @@ public class TickToyMove : MonoBehaviour
                 State = TickToyState.Play;
         }
 
+        // 분신 지속 UI용 타이머만 감소 — 분신 자체는 영구(맵 AI처럼 유지)
         if (duplicateTimeLeft > 0f)
+        {
             duplicateTimeLeft -= Time.deltaTime;
+            if (duplicateTimeLeft < 0f)
+                duplicateTimeLeft = 0f;
+        }
 
         switch (State)
         {
@@ -890,14 +897,6 @@ public class TickToyMove : MonoBehaviour
 
     void SpawnDuplicates(int count)
     {
-        if (body == null)
-        {
-            Animator found = GetComponentInChildren<Animator>(true);
-            body = found != null ? found.transform : null;
-        }
-        if (body == null)
-            return;
-
         const float radius = 1.15f;
         for (int i = 0; i < count; i++)
         {
@@ -907,41 +906,52 @@ public class TickToyMove : MonoBehaviour
                 transform.right * (Mathf.Cos(radians) * radius)
                 + transform.forward * (Mathf.Sin(radians) * radius);
 
-            GameObject clone = Instantiate(
-                body.gameObject,
-                body.position + offset,
-                body.rotation);
-            clone.transform.localScale = body.lossyScale;
+            Vector3 spawnPos = transform.position + offset;
+            if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(spawnPos, transform.position.y, out Vector3 ground))
+                spawnPos = new Vector3(spawnPos.x, ground.y, spawnPos.z);
+
+            // 본체와 같은 루트를 복제 → 실제 AI(TickToyAI)로 전환
+            GameObject clone = Instantiate(gameObject, spawnPos, transform.rotation);
             clone.name = gameObject.name + "_Duplicate_" + (i + 1);
-            PrepareDuplicate(clone);
+            PrepareDuplicateAsAI(clone, spawnPos);
             duplicates.Add(clone);
         }
     }
 
-    void PrepareDuplicate(GameObject clone)
+    void PrepareDuplicateAsAI(GameObject clone, Vector3 groundedPos)
     {
+        // Start가 돌기 전에 플레이어 전용 스크립트 차단
+        // OnDisable→ClearDuplicates가 원본 분신 리스트를 지워버리는 것 방지
+        TickToyMove move = clone.GetComponent<TickToyMove>();
+        if (move != null)
+        {
+            move.skipClearDuplicates = true;
+            move.duplicates = new List<GameObject>();
+            move.enabled = false;
+            Destroy(move);
+        }
+
+        TickToyAnimation animDriver = clone.GetComponent<TickToyAnimation>();
+        if (animDriver != null)
+        {
+            animDriver.enabled = false;
+            Destroy(animDriver);
+        }
+
+        TickToyHud[] huds = clone.GetComponentsInChildren<TickToyHud>(true);
+        for (int i = 0; i < huds.Length; i++)
+        {
+            if (huds[i] != null)
+                Destroy(huds[i]);
+        }
+
         Camera[] cameras = clone.GetComponentsInChildren<Camera>(true);
         for (int i = 0; i < cameras.Length; i++)
-            cameras[i].enabled = false;
+            cameras[i].gameObject.SetActive(false);
 
         AudioListener[] listeners = clone.GetComponentsInChildren<AudioListener>(true);
         for (int i = 0; i < listeners.Length; i++)
             listeners[i].enabled = false;
-
-        Collider[] colliders = clone.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < colliders.Length; i++)
-            colliders[i].enabled = false;
-
-        Rigidbody[] bodies = clone.GetComponentsInChildren<Rigidbody>(true);
-        for (int i = 0; i < bodies.Length; i++)
-        {
-            bodies[i].isKinematic = true;
-            bodies[i].useGravity = false;
-        }
-
-        MonoBehaviour[] behaviours = clone.GetComponentsInChildren<MonoBehaviour>(true);
-        for (int i = 0; i < behaviours.Length; i++)
-            behaviours[i].enabled = false;
 
         Transform[] transforms = clone.GetComponentsInChildren<Transform>(true);
         for (int i = 0; i < transforms.Length; i++)
@@ -949,6 +959,43 @@ public class TickToyMove : MonoBehaviour
             if (transforms[i].name.StartsWith("Spring"))
                 transforms[i].gameObject.SetActive(false);
         }
+
+        Rigidbody rbClone = clone.GetComponent<Rigidbody>();
+        if (rbClone == null)
+            rbClone = clone.AddComponent<Rigidbody>();
+        rbClone.isKinematic = true;
+        rbClone.useGravity = false;
+        rbClone.constraints = RigidbodyConstraints.FreezeRotation;
+        rbClone.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+        rbClone.interpolation = RigidbodyInterpolation.Interpolate;
+        rbClone.position = groundedPos;
+        clone.transform.position = groundedPos;
+
+        Collider bodyCol = clone.GetComponent<Collider>();
+        if (bodyCol == null)
+        {
+            BoxCollider box = clone.AddComponent<BoxCollider>();
+            box.size = new Vector3(0.8f, 1.6f, 0.8f);
+            box.center = new Vector3(0f, 0.8f, 0f);
+        }
+        else
+            bodyCol.enabled = true;
+
+        Animator anim = clone.GetComponentInChildren<Animator>(true);
+        if (anim != null)
+        {
+            anim.enabled = true;
+            anim.applyRootMotion = false;
+        }
+
+        Physics.SyncTransforms();
+
+        TickToyAI ai = clone.GetComponent<TickToyAI>();
+        if (ai == null)
+            ai = clone.AddComponent<TickToyAI>();
+        ai.BeginMovingNow();
+
+        KeepOneAudioListener();
     }
 
     void SpawnDuplicateCloud(float totalSeconds)
@@ -1090,12 +1137,11 @@ public class TickToyMove : MonoBehaviour
 
     void ClearDuplicates()
     {
-        for (int i = 0; i < duplicates.Count; i++)
-        {
-            if (duplicates[i] != null)
-                Destroy(duplicates[i]);
-        }
-        duplicates.Clear();
+        // 분신은 영구 보존(실제 AI). 추적 리스트만 비움 — Destroy 하지 않음
+        if (duplicates == null)
+            duplicates = new List<GameObject>();
+        else
+            duplicates.Clear();
     }
 
     public void TakeHit(int damage)
@@ -1261,7 +1307,8 @@ public class TickToyMove : MonoBehaviour
     {
         Physics.ContactModifyEvent -= ModifyStepContacts;
         ReleaseStep();
-        ClearDuplicates();
+        if (!skipClearDuplicates)
+            ClearDuplicates();
     }
 
     bool FindClimbableStep(Vector3 dir, out Collider step)

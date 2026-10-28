@@ -86,7 +86,9 @@ public class WinderMove : MonoBehaviour
         }
     }
     private TickToyHud hud;
+    [SerializeField] private int hp = 100;
 
+    public int Hp => hp;
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
@@ -96,8 +98,38 @@ public class WinderMove : MonoBehaviour
         set
         {
             if (value)
-                State = WinderState.Dead;
+                EnterDead();
         }
+    }
+
+    public void TakeHit(int damage)
+    {
+        if (State == WinderState.Dead)
+            return;
+
+        hp = Mathf.Max(0, hp - Mathf.Max(0, damage));
+        if (hud != null)
+            hud.SetHp(hp);
+
+        if (hp <= 0)
+            EnterDead();
+    }
+
+    void EnterDead()
+    {
+        if (State == WinderState.Dead)
+            return;
+
+        State = WinderState.Dead;
+        hp = 0;
+        if (rb != null && !rb.isKinematic)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.isKinematic = true;
+        }
+
+        if (animationController != null)
+            animationController.SetFaint(true);
     }
 
     void Awake()

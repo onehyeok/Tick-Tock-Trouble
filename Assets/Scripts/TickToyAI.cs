@@ -45,9 +45,21 @@ public class TickToyAI : MonoBehaviour
     float jumpElapsed;
     float jumpDuration;
     float jumpPeakHeight;
+    bool startMovingNow;
 
     public int Hp => hp;
     public bool IsDead => dead;
+
+    /// <summary>분신 스폰 직후 대기 없이 바로 Run.</summary>
+    public void BeginMovingNow()
+    {
+        startMovingNow = true;
+        dead = false;
+        ForceToGround(true);
+        settled = true;
+        settleTimer = 0f;
+        EnterRun();
+    }
 
     void Awake()
     {
@@ -75,6 +87,15 @@ public class TickToyAI : MonoBehaviour
     void Start()
     {
         ForceToGround(true);
+        if (startMovingNow)
+        {
+            settled = true;
+            settleTimer = 0f;
+            if (state != AiState.Run)
+                EnterRun();
+            return;
+        }
+
         settled = false;
         settleTimer = 0.15f;
         EnterIdle();

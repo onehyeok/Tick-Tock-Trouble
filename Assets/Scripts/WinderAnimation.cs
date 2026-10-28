@@ -4,7 +4,8 @@ using UnityEngine.Events;
 
 public class WinderAnimation : MonoBehaviour
 {
-    private const int AttackDamage = 30;
+    private const int NormalDamage = 25;
+    private const int GoldDamage = 100;
     private static readonly Collider[] AttackHits = new Collider[16];
 
     private Animator animator;
@@ -206,31 +207,61 @@ public class WinderAnimation : MonoBehaviour
             QueryTriggerInteraction.Ignore);
 
         for (int i = 0; i < count; i++)
-        {
-            Collider hit = AttackHits[i];
-            if (hit == null || hit.transform == transform || hit.transform.IsChildOf(transform))
-                continue;
-
-            TickToyMove toy = hit.GetComponentInParent<TickToyMove>();
-            if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))
-                continue;
-
-            toy.TakeHit(AttackDamage);
-        }
+            TryHitTarget(AttackHits[i]);
     }
 
     void OnTriggerEnter(Collider other)
     {
         if (!IsSwinging() || other == null)
             return;
-        if (other.transform == transform || other.transform.IsChildOf(transform))
+
+        TryHitTarget(other);
+    }
+
+    void TryHitTarget(Collider hit)
+    {
+        if (hit == null || hit.transform == transform || hit.transform.IsChildOf(transform))
             return;
 
-        TickToyMove toy = other.GetComponentInParent<TickToyMove>();
+        bool gold = IsUsingGoldenClub();
+        int damage = gold ? GoldDamage : NormalDamage;
+
+        // 분신·맵 AI = TickToyAI → 대상 -25(황금 -100), 일반 몽둥이면 와인더도 -25
+        TickToyAI ai = hit.GetComponentInParent<TickToyAI>();
+        if (ai != null)
+        {
+            if (ai.IsDead || !hitThisSwing.Add(ai.GetInstanceID()))
+                return;
+
+            ai.TakeHit(damage);
+            if (!gold && move != null)
+                move.TakeHit(NormalDamage);
+            return;
+        }
+
+        // 진짜 TickToy → 대상만 피해, 와인더 자해 없음
+        TickToyMove toy = hit.GetComponentInParent<TickToyMove>();
         if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))
             return;
 
-        toy.TakeHit(AttackDamage);
+        toy.TakeHit(damage);
+    }
+
+    bool IsUsingGoldenClub()
+    {
+        Transform[] transforms = GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            Transform t = transforms[i];
+            if (t == null || !t.gameObject.activeInHierarchy)
+                continue;
+            if (t.name.IndexOf("BrickGoldWeapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (t.name.IndexOf("GoldWeapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+        }
+
+        return false;
     }
 
     void Jump()
