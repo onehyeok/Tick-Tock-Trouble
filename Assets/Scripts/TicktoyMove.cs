@@ -67,10 +67,13 @@ public class TickToyMove : MonoBehaviour
     private float jumpLock;
     private float jumpCooldown;
     private bool jumped;
+    private float jumpAscentY;
     private Collider stepIgnored;
     private float vaultTopY;
     private float stepIgnoreUntil;
-    private static readonly Collider[] StepHits = new Collider[8];
+    private bool vaultWallPass;
+    private bool vaultIgnoredCollision;
+    private Vector3 vaultDir;
     private static readonly RaycastHit[] GroundHits = new RaycastHit[8];
     private bool isProne = false;
     private float runTimeLeft;
@@ -302,6 +305,7 @@ public class TickToyMove : MonoBehaviour
             jumpLock -= Time.fixedDeltaTime;
             isGrounded = false;
             leftGround = true;
+            PreserveJumpAscent();
             KeepStep();
             return;
         }
@@ -313,6 +317,8 @@ public class TickToyMove : MonoBehaviour
             if (!wasGrounded && jumped)
                 jumpCooldown = 0.2f;
             jumped = false;
+            jumpAscentY = 0f;
+            vaultWallPass = false;
             leftGround = false;
             restTime = 0f;
         }
@@ -329,6 +335,8 @@ public class TickToyMove : MonoBehaviour
                 restTime = 0f;
                 leftGround = true;
             }
+
+            PreserveJumpAscent();
         }
 
         if (MoveInput.sqrMagnitude > 0.01f && StepOverLowSeam(PlanarVelocity(State == TickToyState.Run ? 2f : 1f)))
@@ -1329,24 +1337,33 @@ public class TickToyMove : MonoBehaviour
 
         float speedScale = State == TickToyState.Run ? 2f : 1f;
         Vector3 planar = PlanarVelocity(speedScale);
-        Vector3 dir = planar.sqrMagnitude > 0.01f ? planar.normalized : FlatForward();
-        Collider step = null;
-        bool climb = FindClimbableStep(dir, out step);
-        if (climb && planar.sqrMagnitude < 0.01f)
-        {
-            float speed = moveSpeed * speedScale;
-            if (isProne)
-                speed *= proneMoveSpeedMultiplier;
-            planar = dir * speed;
-        }
+        bool moving = planar.sqrMagnitude > 0.01f;
+        Vector3 dir = moving ? planar.normalized : FlatForward();
+        vaultDir = dir;
 
-        if (climb && bodyCollider != null)
+        // 제자리(스페이스만) 점프는 수직만. 앞으로 밀어 넣거나 벽을 통과시키지 않음.
+        ReleaseStep();
+        Collider step = null;
+        float topY;
+        if (moving && FindClimbableStep(dir, out step, out topY) && bodyCollider != null)
         {
-            ReleaseStep();
-            Physics.IgnoreCollision(bodyCollider, step, true);
+            vaultTopY = topY;
+            stepIgnoreUntil = Time.time + 0.55f;
             stepIgnored = step;
-            vaultTopY = step.bounds.max.y;
-            stepIgnoreUntil = Time.time + 0.5f;
+            if (!ColliderSupportsFeet(step))
+            {
+                Physics.IgnoreCollision(bodyCollider, step, true);
+                vaultIgnoredCollision = true;
+            }
+            else
+                vaultWallPass = true;
+        }
+        else if (moving && TryWallNormalAhead(dir, out Vector3 wallN))
+        {
+            // 높은 벽에 붙은 채 점프: 벽으로 파고드는 속도만 빼서 높이가 깎이지 않게
+            float into = Vector3.Dot(planar, -wallN);
+            if (into > 0f)
+                planar += wallN * into;
         }
 
         Vector3 velocity = rb.linearVelocity;
@@ -1354,6 +1371,7 @@ public class TickToyMove : MonoBehaviour
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
+        jumpAscentY = JumpPower;
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
@@ -1370,23 +1388,69 @@ public class TickToyMove : MonoBehaviour
         return forward.normalized;
     }
 
+    void PreserveJumpAscent()
+    {
+        if (!jumped || rb == null || rb.isKinematic)
+            return;
+
+        Vector3 velocity = rb.linearVelocity;
+        if (jumpAscentY > 0f)
+        {
+            jumpAscentY += Physics.gravity.y * Time.fixedDeltaTime;
+            if (velocity.y < jumpAscentY)
+                velocity.y = jumpAscentY;
+            if (jumpAscentY < 0f)
+                jumpAscentY = 0f;
+        }
+
+        if (stepIgnored == null && !vaultWallPass)
+        {
+            Vector3 planar = new Vector3(velocity.x, 0f, velocity.z);
+            if (planar.sqrMagnitude > 0.01f && TryWallNormalAhead(planar.normalized, out Vector3 wallN))
+            {
+                float into = Vector3.Dot(planar, -wallN);
+                if (into > 0f)
+                {
+                    planar += wallN * into;
+                    velocity.x = planar.x;
+                    velocity.z = planar.z;
+                }
+            }
+        }
+
+        rb.linearVelocity = velocity;
+    }
+
     void KeepStep()
     {
-        if (stepIgnored == null || bodyCollider == null)
+        if (bodyCollider == null)
+            return;
+
+        bool vaulting = stepIgnored != null || vaultWallPass;
+        if (!vaulting)
             return;
 
         bool feetClear = bodyCollider.bounds.min.y >= vaultTopY - 0.05f;
         bool falling = rb != null && rb.linearVelocity.y < -0.2f;
+        if (feetClear && vaultDir.sqrMagnitude > 0.01f && rb != null)
+        {
+            Vector3 p = rb.position;
+            p += vaultDir.normalized * 0.18f;
+            rb.position = p;
+        }
+
         if (feetClear || falling || Time.time >= stepIgnoreUntil)
             ReleaseStep();
     }
 
     void ReleaseStep()
     {
-        if (stepIgnored != null && bodyCollider != null)
+        if (vaultIgnoredCollision && stepIgnored != null && bodyCollider != null)
             Physics.IgnoreCollision(bodyCollider, stepIgnored, false);
 
         stepIgnored = null;
+        vaultWallPass = false;
+        vaultIgnoredCollision = false;
     }
 
     void OnDisable()
@@ -1397,48 +1461,99 @@ public class TickToyMove : MonoBehaviour
             ClearDuplicates();
     }
 
-    bool FindClimbableStep(Vector3 dir, out Collider step)
+    bool FindClimbableStep(Vector3 dir, out Collider step, out float topY)
     {
         step = null;
+        topY = 0f;
         if (bodyCollider == null || dir.sqrMagnitude < 0.01f)
             return false;
+
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f)
+            return false;
+        dir.Normalize();
 
         float gravity = Mathf.Abs(Physics.gravity.y);
         if (gravity < 0.01f)
             gravity = 12f;
         float jumpHeight = (JumpPower * JumpPower) / (2f * gravity);
-        float feet = bodyCollider.bounds.min.y;
-        float reach = bodyCollider.bounds.extents.x + bodyCollider.bounds.extents.z;
-        Vector3 center = bodyCollider.bounds.center + dir * (reach * 0.35f);
-        int count = Physics.OverlapBoxNonAlloc(center, bodyCollider.bounds.extents, StepHits, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+        Bounds bounds = bodyCollider.bounds;
+        float feet = bounds.min.y;
+        float front = Mathf.Max(bounds.extents.x, bounds.extents.z);
+
         float bestRise = float.MaxValue;
-        for (int i = 0; i < count; i++)
+        float[] probeHeights = { 0.12f, 0.28f, 0.45f, 0.7f, 1.0f };
+        for (int i = 0; i < probeHeights.Length; i++)
         {
-            Collider hit = StepHits[i];
-            if (hit == null || hit == bodyCollider)
+            Vector3 origin = new Vector3(bounds.center.x, feet + probeHeights[i], bounds.center.z);
+            if (!Physics.Raycast(origin, dir, out RaycastHit wall, front + 0.5f, ~0, QueryTriggerInteraction.Ignore))
+                continue;
+            if (IsOwnCollider(wall.collider) || wall.collider.attachedRigidbody != null)
+                continue;
+            if (wall.normal.y > 0.45f)
                 continue;
 
-            Transform hitTransform = hit.transform;
-            if (hitTransform == transform || hitTransform.IsChildOf(transform))
+            Vector3 topOrigin = wall.point + dir * 0.1f;
+            topOrigin.y = feet + jumpHeight + 0.45f;
+            if (!Physics.Raycast(topOrigin, Vector3.down, out RaycastHit top, jumpHeight + 0.6f, ~0, QueryTriggerInteraction.Ignore))
+                continue;
+            if (IsOwnCollider(top.collider) || top.normal.y < 0.45f)
                 continue;
 
-            float rise = hit.bounds.max.y - feet;
-            if (rise < 0.08f || rise > jumpHeight + 0.15f)
-                continue;
-
-            Vector3 to = hit.bounds.center - bodyCollider.bounds.center;
-            to.y = 0f;
-            if (to.sqrMagnitude > 0.0001f && Vector3.Dot(to.normalized, dir) < 0.15f)
+            float rise = top.point.y - feet;
+            if (rise < 0.08f || rise > jumpHeight + 0.2f)
                 continue;
 
             if (rise < bestRise)
             {
                 bestRise = rise;
-                step = hit;
+                step = wall.collider;
+                topY = top.point.y;
             }
         }
 
         return step != null;
+    }
+
+    bool ColliderSupportsFeet(Collider other)
+    {
+        if (other == null || bodyCollider == null)
+            return false;
+
+        Bounds bounds = bodyCollider.bounds;
+        Vector3 origin = new Vector3(bounds.center.x, bounds.min.y + 0.25f, bounds.center.z);
+        int count = Physics.RaycastNonAlloc(origin, Vector3.down, GroundHits, 0.55f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < count; i++)
+        {
+            if (GroundHits[i].collider == other && GroundHits[i].normal.y >= 0.45f)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool TryWallNormalAhead(Vector3 dir, out Vector3 wallNormal)
+    {
+        wallNormal = Vector3.zero;
+        if (bodyCollider == null || dir.sqrMagnitude < 0.0001f)
+            return false;
+
+        dir.y = 0f;
+        dir.Normalize();
+        Bounds bounds = bodyCollider.bounds;
+        float front = Mathf.Max(bounds.extents.x, bounds.extents.z);
+        Vector3 origin = new Vector3(bounds.center.x, bounds.min.y + 0.45f, bounds.center.z);
+        if (!Physics.Raycast(origin, dir, out RaycastHit wall, front + 0.4f, ~0, QueryTriggerInteraction.Ignore))
+            return false;
+        if (IsOwnCollider(wall.collider) || wall.normal.y > 0.45f)
+            return false;
+
+        wallNormal = wall.normal;
+        wallNormal.y = 0f;
+        if (wallNormal.sqrMagnitude < 0.0001f)
+            return false;
+        wallNormal.Normalize();
+        return true;
     }
 
     void RefreshStepCache()
@@ -1468,16 +1583,22 @@ public class TickToyMove : MonoBehaviour
 
     void ModifyStepContacts(PhysicsScene scene, NativeArray<ModifiableContactPair> pairs)
     {
-        if (!cachedCanStep || physicsBodyId == 0)
+        if (physicsBodyId == 0)
             return;
+
+        bool wallPass = vaultWallPass && jumped && rb != null && !rb.isKinematic
+            && (jumpLock > 0f || rb.linearVelocity.y > -0.15f);
 
         float lip = Mathf.Max(0.05f, walkLipHeight);
         float feet = cachedFeetY;
         Vector3 wish = cachedWish;
         wish.y = 0f;
-        if (wish.sqrMagnitude < 0.0001f)
+        bool canWalkStep = cachedCanStep && wish.sqrMagnitude > 0.0001f;
+        if (canWalkStep)
+            wish.Normalize();
+
+        if (!wallPass && !canWalkStep)
             return;
-        wish.Normalize();
 
         for (int p = 0; p < pairs.Length; p++)
         {
@@ -1488,6 +1609,21 @@ public class TickToyMove : MonoBehaviour
                 continue;
             if ((first ? pair.otherBodyInstanceID : pair.bodyInstanceID) != 0)
                 continue;
+
+            if (wallPass)
+            {
+                for (int i = 0; i < pair.contactCount; i++)
+                {
+                    Vector3 normal = pair.GetNormal(i);
+                    Vector3 towardUs = first ? normal : -normal;
+                    if (towardUs.y > 0.45f)
+                        continue;
+                    pair.SetMaxImpulse(i, 0f);
+                }
+
+                pairs[p] = pair;
+                continue;
+            }
 
             bool tall = false;
             bool lowBlock = false;
