@@ -153,8 +153,15 @@ public static class ArmpitSeparator
             weight.weight3 = 0f;
 
         float sum = weight.weight0 + weight.weight1 + weight.weight2 + weight.weight3;
+        // 가중치가 전부 사라지면 스키닝이 폭발/찢어짐 → 드롭하지 않은 것처럼 유지
         if (sum < 0.001f)
+        {
+            weight.weight0 = 1f;
+            weight.weight1 = 0f;
+            weight.weight2 = 0f;
+            weight.weight3 = 0f;
             return weight;
+        }
 
         weight.weight0 /= sum;
         weight.weight1 /= sum;

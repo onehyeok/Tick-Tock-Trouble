@@ -388,6 +388,17 @@ public class TickToyAnimation : MonoBehaviour
     {
         if (input.sqrMagnitude > 1f)
             input.Normalize();
+
+        // Backward 클립 미사용: 이동은 그대로, 애니만 전/좌/우 런
+        // S → Forward Run / AS → Left Run / DS → Right Run
+        if (input.y < -0.01f)
+        {
+            if (Mathf.Abs(input.x) >= 0.05f)
+                input = new Vector2(-Mathf.Sign(input.x), 0f); // AS/DS 좌우 반전
+            else
+                input = new Vector2(0f, 1f);
+        }
+
         animator.SetFloat("MoveX", input.x);
         animator.SetFloat("MoveY", input.y);
     }

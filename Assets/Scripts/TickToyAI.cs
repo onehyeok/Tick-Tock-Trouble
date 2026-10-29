@@ -478,6 +478,15 @@ public class TickToyAI : MonoBehaviour
         if (animator == null)
             return;
 
+        // Backward 클립 미사용 (플레이어와 동일)
+        if (move.y < -0.01f)
+        {
+            if (Mathf.Abs(move.x) >= 0.05f)
+                move = new Vector2(-Mathf.Sign(move.x), 0f); // AS/DS 좌우 반전
+            else
+                move = new Vector2(0f, 1f);
+        }
+
         bool moving = move.sqrMagnitude > 0.01f && !prone;
         animator.SetBool("IsProne", prone);
         animator.SetBool("IsWinding", false);
