@@ -38,6 +38,9 @@ public class TickToyAI : MonoBehaviour
     bool dead;
     bool deadFalling;
     float deadFallVel;
+    bool deadModelCached;
+    Vector3 deadModelRestLocal;
+    Quaternion deadModelRestLocalRot = Quaternion.identity;
     bool settled;
     float settleTimer = 0.15f;
     Vector3 moveDir = Vector3.forward;
@@ -568,6 +571,20 @@ public class TickToyAI : MonoBehaviour
         if (animator == null || !animator.isHuman)
             return;
 
+        if (!deadModelCached)
+        {
+            deadModelRestLocal = animator.transform.localPosition;
+            deadModelRestLocalRot = animator.transform.localRotation;
+            deadModelCached = true;
+        }
+        else
+        {
+            animator.transform.localPosition = deadModelRestLocal;
+            animator.transform.localRotation = deadModelRestLocalRot;
+        }
+
+        LevelDeadPose();
+
         float contactY = float.PositiveInfinity;
         AccAiBoneY(HumanBodyBones.Hips, ref contactY);
         AccAiBoneY(HumanBodyBones.Spine, ref contactY);
@@ -589,6 +606,34 @@ public class TickToyAI : MonoBehaviour
             return;
 
         animator.transform.position -= Vector3.up * gap;
+    }
+
+    void LevelDeadPose()
+    {
+        Transform head = animator.GetBoneTransform(HumanBodyBones.Head);
+        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+        Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        if (head == null || hips == null || leftFoot == null || rightFoot == null)
+            return;
+
+        Vector3 feet = (leftFoot.position + rightFoot.position) * 0.5f;
+        Vector3 along = head.position - feet;
+        Vector3 flat = new Vector3(along.x, 0f, along.z);
+        if (flat.sqrMagnitude < 0.0001f)
+            return;
+
+        Vector3 axis = Vector3.Cross(along, Vector3.up);
+        if (axis.sqrMagnitude < 0.0001f)
+            return;
+        axis.Normalize();
+
+        float angle = Vector3.SignedAngle(along, flat, axis);
+        angle = Mathf.Clamp(angle, -28f, 28f);
+        if (Mathf.Abs(angle) < 0.5f)
+            return;
+
+        animator.transform.RotateAround(hips.position, axis, angle);
     }
 
     void AccAiBoneY(HumanBodyBones bone, ref float lowestY)

@@ -12,6 +12,7 @@ public class TickToyAnimation : MonoBehaviour
     private Transform leftLowerLeg;
     private Transform rightLowerLeg;
     private Vector3 modelRestLocal;
+    private Quaternion modelRestLocalRot = Quaternion.identity;
     private bool modelShifted;
     private bool ignoreWindUntilRelease;
 
@@ -183,11 +184,22 @@ public class TickToyAnimation : MonoBehaviour
             if (!modelShifted)
             {
                 modelRestLocal = animator.transform.localPosition;
+                modelRestLocalRot = animator.transform.localRotation;
                 modelShifted = true;
             }
+            else
+            {
+                // 매 프레임 보정 누적 방지 — 애니 기본 자세에서 다시 맞춤
+                animator.transform.localPosition = modelRestLocal;
+                animator.transform.localRotation = modelRestLocalRot;
+            }
+
+            bool downed = move.IsDead || move.IsFainted;
+            if (downed)
+                LevelDownedPose();
 
             // Die/Faint는 등·엉덩이가 가장 낮음 — 발만 심으면 몸이 바닥에 파묻힘
-            PlantFeet(IsProne() || move.IsDead || move.IsFainted);
+            PlantFeet(IsProne() || downed);
             move.FitProneCollider();
             return;
         }
@@ -202,7 +214,41 @@ public class TickToyAnimation : MonoBehaviour
             return;
 
         animator.transform.localPosition = modelRestLocal;
+        animator.transform.localRotation = modelRestLocalRot;
         modelShifted = false;
+    }
+
+    /// <summary>Die 자세가 머리만 땅에 닿고 다리가 뜨면, 몸 축을 바닥에 평행하게 살짝 눕힘.</summary>
+    void LevelDownedPose()
+    {
+        if (!animator.isHuman)
+            return;
+
+        Transform head = animator.GetBoneTransform(HumanBodyBones.Head);
+        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+        Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        if (head == null || hips == null || leftFoot == null || rightFoot == null)
+            return;
+
+        Vector3 feet = (leftFoot.position + rightFoot.position) * 0.5f;
+        Vector3 along = head.position - feet;
+        Vector3 flat = new Vector3(along.x, 0f, along.z);
+        if (flat.sqrMagnitude < 0.0001f)
+            return;
+
+        Vector3 axis = Vector3.Cross(along, Vector3.up);
+        if (axis.sqrMagnitude < 0.0001f)
+            return;
+        axis.Normalize();
+
+        float angle = Vector3.SignedAngle(along, flat, axis);
+        // 과한 보정 방지 — 살짝만
+        angle = Mathf.Clamp(angle, -28f, 28f);
+        if (Mathf.Abs(angle) < 0.5f)
+            return;
+
+        animator.transform.RotateAround(hips.position, axis, angle);
     }
 
     void SpreadLegsOnSpot()
