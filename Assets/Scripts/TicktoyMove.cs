@@ -843,6 +843,21 @@ public class TickToyMove : MonoBehaviour
         grantedLevel = Mathf.Clamp(level, 1, 3);
     }
 
+    /// <summary>분신 복제본용 — 달리기/드러눕기/분신 타이머·부여 능력을 모두 제거.</summary>
+    public void ClearGrantedAndTimedAbilities()
+    {
+        grantedAbility = 0;
+        grantedLevel = 0;
+        runTimeLeft = 0f;
+        runDuration = 0f;
+        faintTimeLeft = 0f;
+        faintDuration = 0f;
+        duplicateTimeLeft = 0f;
+        abilityDuration = 0f;
+        if (State == TickToyState.Run || State == TickToyState.Faint)
+            State = TickToyState.Play;
+    }
+
     void UseGrantedAbility()
     {
         if (grantedLevel <= 0)
@@ -990,6 +1005,8 @@ public class TickToyMove : MonoBehaviour
         {
             move.skipClearDuplicates = true;
             move.duplicates = new List<GameObject>();
+            // 본체 달리기/능력 상태가 Instantiate로 복사되지 않게 즉시 제거
+            move.ClearGrantedAndTimedAbilities();
             move.enabled = false;
             Destroy(move);
         }
@@ -1049,6 +1066,12 @@ public class TickToyMove : MonoBehaviour
         {
             anim.enabled = true;
             anim.applyRootMotion = false;
+            anim.SetFloat("MoveX", 0f);
+            anim.SetFloat("MoveY", 0f);
+            anim.SetBool("IsWinding", false);
+            anim.SetBool("IsProne", false);
+            anim.ResetTrigger("Die");
+            anim.CrossFadeInFixedTime("Idle", 0.05f, 0, 0f);
         }
 
         Physics.SyncTransforms();

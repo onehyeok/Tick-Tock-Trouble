@@ -396,6 +396,10 @@ public class TickToyHud : MonoBehaviour
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
         {
+            // 분신 복제본(비활성 Move)은 무시 — 본체만 달리기/드러눕기 UI
+            if (toys[i] == null || !toys[i].enabled)
+                continue;
+
             if (toys[i].FaintCancelled)
                 faintCancelled = true;
 
@@ -441,7 +445,7 @@ public class TickToyHud : MonoBehaviour
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
         {
-            if (toys[i].IsWinding)
+            if (toys[i] != null && toys[i].enabled && toys[i].IsWinding)
                 return true;
         }
 
@@ -529,7 +533,9 @@ public class TickToyHud : MonoBehaviour
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
         {
-            if (!toys[i].IsDead && toys[i].FindWinderInReach() != null)
+            if (toys[i] == null || !toys[i].enabled || toys[i].IsDead)
+                continue;
+            if (toys[i].FindWinderInReach() != null)
                 return true;
         }
 
@@ -637,6 +643,10 @@ public class TickToyHud : MonoBehaviour
             kind = 3;
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
+        {
+            if (toys[i] == null || !toys[i].enabled)
+                continue;
             toys[i].GrantAbility(kind, abilityLevel);
+        }
     }
 }
