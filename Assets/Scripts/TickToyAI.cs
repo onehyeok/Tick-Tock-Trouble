@@ -36,6 +36,8 @@ public class TickToyAI : MonoBehaviour
     int jumpsLeft;
     float jumpTimer;
     bool dead;
+    bool deadFalling;
+    float deadFallVel;
     bool settled;
     float settleTimer = 0.15f;
     Vector3 moveDir = Vector3.forward;
@@ -169,8 +171,15 @@ public class TickToyAI : MonoBehaviour
 
     void FixedUpdate()
     {
-        if (dead || rb == null)
+        if (rb == null)
             return;
+
+        if (dead)
+        {
+            if (deadFalling)
+                TickDeadFall();
+            return;
+        }
 
         SeparateFromPlayersOnly();
 
@@ -492,7 +501,54 @@ public class TickToyAI : MonoBehaviour
         dead = true;
         hp = 0;
         currentSpeed = 0f;
+
+        // 점프 중이면 현재 상승/하강 속도로 자연 낙하
+        if (rb != null && (jumpInAir || rb.position.y > lockedGroundY + 0.08f))
+        {
+            deadFallVel = jumpInAir ? EstimateJumpVerticalVelocity() : 0f;
+            jumpInAir = false;
+            deadFalling = true;
+            if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(rb.position, lockedGroundY != 0f ? lockedGroundY : rb.position.y, out Vector3 g))
+                lockedGroundY = g.y;
+        }
+        else
+        {
+            jumpInAir = false;
+            deadFalling = false;
+            deadFallVel = 0f;
+            StickYToGround();
+        }
+
         if (animator != null)
             animator.SetTrigger("Die");
+    }
+
+    float EstimateJumpVerticalVelocity()
+    {
+        if (jumpDuration < 0.01f)
+            return 0f;
+        float t = Mathf.Clamp01(jumpElapsed / jumpDuration);
+        // height = 4*peak*t*(1-t) → vy = dheight/dt
+        return (4f * jumpPeakHeight * (1f - 2f * t)) / jumpDuration;
+    }
+
+    void TickDeadFall()
+    {
+        float g = ResolveGravity();
+        deadFallVel -= g * Time.fixedDeltaTime;
+
+        Vector3 p = rb.position;
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(p, lockedGroundY != 0f ? lockedGroundY : p.y, out Vector3 ground))
+            lockedGroundY = ground.y;
+
+        p.y += deadFallVel * Time.fixedDeltaTime;
+        if (p.y <= lockedGroundY)
+        {
+            p.y = lockedGroundY;
+            deadFalling = false;
+            deadFallVel = 0f;
+        }
+
+        rb.MovePosition(p);
     }
 }

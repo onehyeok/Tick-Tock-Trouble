@@ -78,6 +78,7 @@ public class TickToyMove : MonoBehaviour
     private bool waitStandRelease;
     private bool faintOnGround;
     private float faintTimeLeft;
+    private bool deadSettled;
     private float duplicateTimeLeft;
     // Instantiate 복제 시 원본 분신 리스트가 같이 복사·삭제되지 않게
     [System.NonSerialized] private List<GameObject> duplicates = new List<GameObject>();
@@ -377,7 +378,10 @@ public class TickToyMove : MonoBehaviour
     void Update()
     {
         if (State == TickToyState.Dead)
+        {
+            TickDeadFall();
             return;
+        }
 
         InputUpdate();
         if (PressedAbilityKey())
@@ -1204,7 +1208,41 @@ public class TickToyMove : MonoBehaviour
 
         State = TickToyState.Dead;
         ClearDuplicates();
-        SetBodySolid(false);
+
+        // 점프 중 사망 시 공중 고정 방지 — 바닥에 닿을 때까지 중력 유지
+        bool onGround = isGrounded || FeetNearGround();
+        if (onGround)
+        {
+            deadSettled = true;
+            SetBodySolid(false);
+        }
+        else
+        {
+            deadSettled = false;
+            if (bodyCollider != null)
+                bodyCollider.enabled = true;
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+                rb.useGravity = true;
+                Vector3 v = rb.linearVelocity;
+                v.x = 0f;
+                v.z = 0f;
+                rb.linearVelocity = v;
+            }
+        }
+    }
+
+    void TickDeadFall()
+    {
+        if (deadSettled)
+            return;
+
+        if (isGrounded || FeetNearGround())
+        {
+            deadSettled = true;
+            SetBodySolid(false);
+        }
     }
 
     bool FeetNearGround()
