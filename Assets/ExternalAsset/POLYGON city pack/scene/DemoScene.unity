@@ -26223,7 +26223,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1525350071716974406, guid: 85e93a26fe3df0140b7ffcb1e2c03012, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7396856779382875912, guid: 85e93a26fe3df0140b7ffcb1e2c03012, type: 3}
       propertyPath: m_LocalPosition.x
@@ -35922,9 +35922,9 @@ Light:
     m_Type: 1
     m_Resolution: 3
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -43021,9 +43021,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -85607,9 +85607,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -96444,9 +96444,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -133772,7 +133772,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3968517352100129952, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -284.35
+      value: -283.218
       objectReference: {fileID: 0}
     - target: {fileID: 3968517352100129952, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_LocalPosition.y
@@ -133780,7 +133780,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3968517352100129952, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 11.48
+      value: 12.043
       objectReference: {fileID: 0}
     - target: {fileID: 3968517352100129952, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_LocalRotation.w
@@ -238816,9 +238816,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -317841,9 +317841,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -361139,9 +361139,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -395069,9 +395069,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
@@ -399824,9 +399824,9 @@ Light:
     m_Type: 0
     m_Resolution: -1
     m_CustomResolution: -1
-    m_Strength: 1
-    m_Bias: 0.05
-    m_NormalBias: 0
+    m_Strength: 0.85
+    m_Bias: 0.1
+    m_NormalBias: 0.4
     m_NearPlane: 0.2
     m_CullingMatrixOverride:
       e00: 1
