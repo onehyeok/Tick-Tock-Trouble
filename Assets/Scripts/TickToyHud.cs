@@ -47,6 +47,13 @@ public class TickToyHud : MonoBehaviour
     private Text windLabel;
     private Text stopPrompt;
     private Font displayFont;
+    private Image damageFlashImage;
+    private Text damagePopText;
+    private float damageFlashLeft;
+    private float damagePopLeft;
+    private Vector2 damagePopBasePos;
+    private Vector3 hpTextBaseScale = Vector3.one;
+    private Color hpTextBaseColor = Color.white;
 
     void Awake()
     {
@@ -64,12 +71,19 @@ public class TickToyHud : MonoBehaviour
         }
 
         ShowEmptyAbility();
+        EnsureDamageFlashUi();
+        if (hpText != null)
+        {
+            hpTextBaseScale = hpText.rectTransform.localScale;
+            hpTextBaseColor = hpText.color;
+        }
     }
 
     void Update()
     {
         UpdateAbilityTestKeys();
         RefreshStopPrompt();
+        TickDamageFlashUi();
         if (stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
             GrantOrLevelFromStop();
 
@@ -89,6 +103,150 @@ public class TickToyHud : MonoBehaviour
             return;
 
         HideGauge();
+    }
+
+    /// <summary>브릭(와인더)이 AI 때려서 자해 피해 입을 때 — 귀여운 화면/HP 연출.</summary>
+    public void PlayWinderDamageFlash(int damageAmount = 25)
+    {
+        EnsureDamageFlashUi();
+        damageFlashLeft = 0.55f;
+        damagePopLeft = 0.85f;
+
+        if (damageFlashImage != null)
+        {
+            damageFlashImage.gameObject.SetActive(true);
+            Color c = new Color(1f, 0.35f, 0.55f, 0.45f); // 파스텔 핑크-레드
+            damageFlashImage.color = c;
+        }
+
+        if (damagePopText != null)
+        {
+            damagePopText.gameObject.SetActive(true);
+            damagePopText.text = "-" + Mathf.Abs(damageAmount);
+            damagePopText.color = new Color(1f, 0.25f, 0.45f, 1f);
+            damagePopText.rectTransform.anchoredPosition = damagePopBasePos;
+            damagePopText.rectTransform.localScale = Vector3.one * 1.15f;
+        }
+
+        if (hpText != null)
+        {
+            hpText.color = new Color(1f, 0.2f, 0.4f, 1f);
+            hpText.rectTransform.localScale = hpTextBaseScale * 1.35f;
+        }
+    }
+
+    void EnsureDamageFlashUi()
+    {
+        if (damageFlashImage != null)
+            return;
+
+        // 화면 가장자리 비네트용 풀스크린 이미지
+        GameObject flashGo = new GameObject("DamageFlash", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        flashGo.transform.SetParent(transform, false);
+        RectTransform flashRt = flashGo.GetComponent<RectTransform>();
+        flashRt.anchorMin = Vector2.zero;
+        flashRt.anchorMax = Vector2.one;
+        flashRt.offsetMin = Vector2.zero;
+        flashRt.offsetMax = Vector2.zero;
+        damageFlashImage = flashGo.GetComponent<Image>();
+        damageFlashImage.raycastTarget = false;
+        damageFlashImage.color = new Color(1f, 0.4f, 0.55f, 0f);
+        // 단색 스프라이트
+        Texture2D tex = Texture2D.whiteTexture;
+        damageFlashImage.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        flashGo.SetActive(false);
+
+        GameObject popGo = new GameObject("DamagePop", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+        popGo.transform.SetParent(transform, false);
+        RectTransform popRt = popGo.GetComponent<RectTransform>();
+        if (hpText != null)
+        {
+            popRt.anchorMin = hpText.rectTransform.anchorMin;
+            popRt.anchorMax = hpText.rectTransform.anchorMax;
+            popRt.pivot = hpText.rectTransform.pivot;
+            popRt.anchoredPosition = hpText.rectTransform.anchoredPosition + new Vector2(0f, 48f);
+            popRt.sizeDelta = new Vector2(220f, 80f);
+        }
+        else
+        {
+            popRt.anchorMin = new Vector2(0.5f, 0.75f);
+            popRt.anchorMax = new Vector2(0.5f, 0.75f);
+            popRt.sizeDelta = new Vector2(220f, 80f);
+        }
+
+        damagePopText = popGo.GetComponent<Text>();
+        damagePopText.alignment = TextAnchor.MiddleCenter;
+        damagePopText.fontSize = 42;
+        damagePopText.fontStyle = FontStyle.Bold;
+        damagePopText.raycastTarget = false;
+        damagePopText.horizontalOverflow = HorizontalWrapMode.Overflow;
+        damagePopText.verticalOverflow = VerticalWrapMode.Overflow;
+        if (displayFont != null)
+            damagePopText.font = displayFont;
+        else
+            ApplyDisplayFont(damagePopText, 42);
+        damagePopBasePos = popRt.anchoredPosition;
+        popGo.SetActive(false);
+
+        // 맨 위에 보이게
+        flashGo.transform.SetAsLastSibling();
+        popGo.transform.SetAsLastSibling();
+    }
+
+    void TickDamageFlashUi()
+    {
+        if (damageFlashLeft > 0f)
+        {
+            damageFlashLeft -= Time.deltaTime;
+            float u = Mathf.Clamp01(damageFlashLeft / 0.55f);
+            if (damageFlashImage != null)
+            {
+                // 가장자리만 느껴지게 알파 곡선
+                float a = 0.5f * u * u;
+                Color c = damageFlashImage.color;
+                c.a = a;
+                // 중앙은 비우고 테두리감: 전체 페이드로 귀엽게
+                damageFlashImage.color = c;
+                damageFlashImage.gameObject.SetActive(u > 0.01f);
+            }
+        }
+        else if (damageFlashImage != null && damageFlashImage.gameObject.activeSelf)
+        {
+            damageFlashImage.gameObject.SetActive(false);
+        }
+
+        if (damagePopLeft > 0f)
+        {
+            damagePopLeft -= Time.deltaTime;
+            float u = Mathf.Clamp01(damagePopLeft / 0.85f);
+            if (damagePopText != null)
+            {
+                Color c = damagePopText.color;
+                c.a = u;
+                damagePopText.color = c;
+                float rise = (1f - u) * 36f;
+                damagePopText.rectTransform.anchoredPosition = damagePopBasePos + Vector2.up * rise;
+                damagePopText.rectTransform.localScale = Vector3.one * Mathf.Lerp(0.85f, 1.25f, u);
+                damagePopText.gameObject.SetActive(u > 0.02f);
+            }
+
+            if (hpText != null)
+            {
+                float punch = Mathf.Clamp01(damagePopLeft / 0.35f);
+                hpText.rectTransform.localScale = Vector3.Lerp(hpTextBaseScale, hpTextBaseScale * 1.35f, punch);
+                hpText.color = Color.Lerp(hpTextBaseColor, new Color(1f, 0.2f, 0.4f, 1f), punch);
+            }
+        }
+        else
+        {
+            if (damagePopText != null && damagePopText.gameObject.activeSelf)
+                damagePopText.gameObject.SetActive(false);
+            if (hpText != null)
+            {
+                hpText.rectTransform.localScale = hpTextBaseScale;
+                hpText.color = hpTextBaseColor;
+            }
+        }
     }
 
     void UpdateAbilityTestKeys()

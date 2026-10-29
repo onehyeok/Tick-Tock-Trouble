@@ -118,7 +118,10 @@ public class WinderMove : MonoBehaviour
 
         hp = Mathf.Max(0, hp - Mathf.Max(0, damage));
         if (hud != null)
+        {
             hud.SetHp(hp);
+            hud.PlayWinderDamageFlash(damage);
+        }
 
         if (hp <= 0)
             EnterDead();

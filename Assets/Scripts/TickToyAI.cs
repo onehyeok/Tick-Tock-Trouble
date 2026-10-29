@@ -481,6 +481,8 @@ public class TickToyAI : MonoBehaviour
         if (animator != null)
             animator.SetTrigger("GetHit");
 
+        HitFeedback.PlayAiHit(transform);
+
         if (hp <= 0)
             Die();
     }

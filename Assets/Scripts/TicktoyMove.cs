@@ -1169,6 +1169,8 @@ public class TickToyMove : MonoBehaviour
 
         if (animationController != null)
             animationController.PlayGetHit();
+
+        HitFeedback.PlayTickToyHit(transform);
     }
 
     public void BreakFaint()
