@@ -186,7 +186,8 @@ public class TickToyAnimation : MonoBehaviour
                 modelShifted = true;
             }
 
-            PlantFeet(IsProne());
+            // Die/Faint는 등·엉덩이가 가장 낮음 — 발만 심으면 몸이 바닥에 파묻힘
+            PlantFeet(IsProne() || move.IsDead || move.IsFainted);
             move.FitProneCollider();
             return;
         }
@@ -250,24 +251,34 @@ public class TickToyAnimation : MonoBehaviour
         if (!animator.isHuman)
             return;
 
-        Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
-        Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
-        if (leftFoot == null || rightFoot == null)
-            return;
+        bool downed = move != null && (move.IsDead || move.IsFainted);
+        float contactY = float.PositiveInfinity;
+        Vector3 sample = animator.transform.position;
 
-        float footY = Mathf.Min(leftFoot.position.y, rightFoot.position.y);
-        if (includeHands)
+        AccBoneY(HumanBodyBones.LeftFoot, ref contactY, ref sample);
+        AccBoneY(HumanBodyBones.RightFoot, ref contactY, ref sample);
+        if (includeHands || downed)
         {
-            Transform leftHand = animator.GetBoneTransform(HumanBodyBones.LeftHand);
-            Transform rightHand = animator.GetBoneTransform(HumanBodyBones.RightHand);
-            if (leftHand != null)
-                footY = Mathf.Min(footY, leftHand.position.y);
-            if (rightHand != null)
-                footY = Mathf.Min(footY, rightHand.position.y);
+            AccBoneY(HumanBodyBones.LeftHand, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.RightHand, ref contactY, ref sample);
         }
 
-        Vector3 feet = (leftFoot.position + rightFoot.position) * 0.5f;
-        Vector3 origin = new Vector3(feet.x, footY + 2f, feet.z);
+        if (downed)
+        {
+            AccBoneY(HumanBodyBones.Hips, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.Spine, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.Chest, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.Head, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.LeftUpperArm, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.RightUpperArm, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.LeftLowerLeg, ref contactY, ref sample);
+            AccBoneY(HumanBodyBones.RightLowerLeg, ref contactY, ref sample);
+        }
+
+        if (float.IsPositiveInfinity(contactY))
+            return;
+
+        Vector3 origin = new Vector3(sample.x, contactY + 2f, sample.z);
         RaycastHit[] hits = Physics.RaycastAll(origin, Vector3.down, 4f, ~0, QueryTriggerInteraction.Ignore);
         float groundY = float.NegativeInfinity;
         for (int i = 0; i < hits.Length; i++)
@@ -278,11 +289,33 @@ public class TickToyAnimation : MonoBehaviour
                 groundY = hits[i].point.y;
         }
 
-        float gap = footY - groundY;
-        if (groundY == float.NegativeInfinity || Mathf.Abs(gap) <= 0.02f || Mathf.Abs(gap) > 1.2f)
+        if (groundY == float.NegativeInfinity)
+            return;
+
+        // 공중 낙하 중엔 메시만 따로 끌어내리지 않음
+        if (downed && contactY > groundY + 0.9f)
+            return;
+
+        // 틱토이 Die 메시는 본보다 두꺼워 바닥에 파묻힘 → 살짝 띄움
+        float pad = downed ? 0.14f : 0f;
+        float gap = contactY - (groundY + pad);
+        float maxGap = downed ? 2.5f : 1.2f;
+        if (Mathf.Abs(gap) <= 0.015f || Mathf.Abs(gap) > maxGap)
             return;
 
         animator.transform.position -= Vector3.up * gap;
+    }
+
+    void AccBoneY(HumanBodyBones bone, ref float lowestY, ref Vector3 sample)
+    {
+        Transform t = animator.GetBoneTransform(bone);
+        if (t == null)
+            return;
+        if (t.position.y < lowestY)
+        {
+            lowestY = t.position.y;
+            sample = t.position;
+        }
     }
 
     void SpreadLeg(Transform upperLeg, Transform lowerLeg, Vector3 outward)

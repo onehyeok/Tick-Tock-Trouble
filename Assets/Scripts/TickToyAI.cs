@@ -178,6 +178,8 @@ public class TickToyAI : MonoBehaviour
         {
             if (deadFalling)
                 TickDeadFall();
+            else
+                TickDeadSettled();
             return;
         }
 
@@ -550,5 +552,96 @@ public class TickToyAI : MonoBehaviour
         }
 
         rb.MovePosition(p);
+    }
+
+    void TickDeadSettled()
+    {
+        if (bodyCollider != null && !bodyCollider.enabled)
+            bodyCollider.enabled = true;
+
+        LiftDownedMeshToGround();
+        FitDeadCollider();
+    }
+
+    void LiftDownedMeshToGround()
+    {
+        if (animator == null || !animator.isHuman)
+            return;
+
+        float contactY = float.PositiveInfinity;
+        AccAiBoneY(HumanBodyBones.Hips, ref contactY);
+        AccAiBoneY(HumanBodyBones.Spine, ref contactY);
+        AccAiBoneY(HumanBodyBones.Chest, ref contactY);
+        AccAiBoneY(HumanBodyBones.Head, ref contactY);
+        AccAiBoneY(HumanBodyBones.LeftHand, ref contactY);
+        AccAiBoneY(HumanBodyBones.RightHand, ref contactY);
+        AccAiBoneY(HumanBodyBones.LeftFoot, ref contactY);
+        AccAiBoneY(HumanBodyBones.RightFoot, ref contactY);
+        AccAiBoneY(HumanBodyBones.LeftLowerLeg, ref contactY);
+        AccAiBoneY(HumanBodyBones.RightLowerLeg, ref contactY);
+        if (float.IsPositiveInfinity(contactY))
+            return;
+
+        const float pad = 0.14f;
+        float target = lockedGroundY + pad;
+        float gap = contactY - target;
+        if (Mathf.Abs(gap) <= 0.015f || Mathf.Abs(gap) > 2.5f)
+            return;
+
+        animator.transform.position -= Vector3.up * gap;
+    }
+
+    void AccAiBoneY(HumanBodyBones bone, ref float lowestY)
+    {
+        Transform t = animator.GetBoneTransform(bone);
+        if (t == null)
+            return;
+        if (t.position.y < lowestY)
+            lowestY = t.position.y;
+    }
+
+    void FitDeadCollider()
+    {
+        BoxCollider box = bodyCollider as BoxCollider;
+        if (box == null || animator == null || !animator.isHuman)
+            return;
+
+        Vector3 min = Vector3.positiveInfinity;
+        Vector3 max = Vector3.negativeInfinity;
+        EncapsulateAiBone(HumanBodyBones.Hips, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.Spine, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.Chest, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.Head, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.RightUpperArm, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.LeftHand, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.RightHand, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.LeftUpperLeg, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.RightUpperLeg, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.LeftFoot, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.RightFoot, ref min, ref max);
+        if (float.IsPositiveInfinity(min.x))
+            return;
+
+        min -= new Vector3(0.16f, 0.06f, 0.14f);
+        max += new Vector3(0.16f, 0.1f, 0.14f);
+
+        Vector3 size = max - min;
+        size.x = Mathf.Max(size.x, 0.5f);
+        size.y = Mathf.Max(size.y, 0.35f);
+        size.z = Mathf.Max(size.z, 0.5f);
+        box.size = size;
+        box.center = (min + max) * 0.5f;
+        box.enabled = true;
+    }
+
+    void EncapsulateAiBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
+    {
+        Transform t = animator.GetBoneTransform(bone);
+        if (t == null)
+            return;
+        Vector3 local = transform.InverseTransformPoint(t.position);
+        min = Vector3.Min(min, local);
+        max = Vector3.Max(max, local);
     }
 }

@@ -141,7 +141,7 @@ public class WinderMove : MonoBehaviour
         if (onGround)
         {
             deadSettled = true;
-            SetBodySolid(false);
+            SettleDownedBody();
         }
         else
         {
@@ -171,8 +171,22 @@ public class WinderMove : MonoBehaviour
         if (isGrounded || FeetNearGround())
         {
             deadSettled = true;
-            SetBodySolid(false);
+            SettleDownedBody();
         }
+    }
+
+    void SettleDownedBody()
+    {
+        if (bodyCollider != null)
+            bodyCollider.enabled = true;
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+        }
+
+        FitProneCollider();
     }
 
     void Awake()
@@ -683,9 +697,14 @@ public class WinderMove : MonoBehaviour
         faintCanBreak = false;
         faintOnGround = FeetNearGround();
         if (faintOnGround)
-            SetBodySolid(false);
+            SettleDownedBody();
         else if (rb != null)
+        {
+            if (bodyCollider != null)
+                bodyCollider.enabled = true;
+            rb.isKinematic = false;
             rb.useGravity = true;
+        }
         if (level <= 1)
             faintTimeLeft = 10f;
         else if (level == 2)
@@ -701,7 +720,7 @@ public class WinderMove : MonoBehaviour
         if (!faintOnGround && FeetNearGround())
         {
             faintOnGround = true;
-            SetBodySolid(false);
+            SettleDownedBody();
         }
 
         if (faintCanBreak && PressedMoveKeyDown())
@@ -796,13 +815,19 @@ public class WinderMove : MonoBehaviour
         if (bodyAnimator == null)
             bodyAnimator = GetComponentInChildren<Animator>();
 
-        bool lying = isProne;
+        bool downed = State == WinderState.Dead || State == WinderState.Faint;
+        bool lying = isProne || downed;
         if (!lying && bodyAnimator != null)
         {
-            if (bodyAnimator.GetCurrentAnimatorStateInfo(0).IsName("Prone"))
+            AnimatorStateInfo cur = bodyAnimator.GetCurrentAnimatorStateInfo(0);
+            if (cur.IsName("Prone") || cur.IsName("Die"))
                 lying = true;
-            else if (bodyAnimator.IsInTransition(0) && bodyAnimator.GetNextAnimatorStateInfo(0).IsName("Prone"))
-                lying = true;
+            else if (bodyAnimator.IsInTransition(0))
+            {
+                AnimatorStateInfo next = bodyAnimator.GetNextAnimatorStateInfo(0);
+                if (next.IsName("Prone") || next.IsName("Die"))
+                    lying = true;
+            }
         }
 
         if (!lying || bodyAnimator == null || !bodyAnimator.isHuman)
@@ -819,8 +844,14 @@ public class WinderMove : MonoBehaviour
         EncapsulateBone(HumanBodyBones.Head, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
         EncapsulateBone(HumanBodyBones.RightUpperArm, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftLowerArm, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightLowerArm, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftHand, ref min, ref max);
         EncapsulateBone(HumanBodyBones.RightHand, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftUpperLeg, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightUpperLeg, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.LeftLowerLeg, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.RightLowerLeg, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftFoot, ref min, ref max);
         EncapsulateBone(HumanBodyBones.RightFoot, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftToes, ref min, ref max);
@@ -850,26 +881,38 @@ public class WinderMove : MonoBehaviour
             max = Vector3.Max(max, ears);
         }
 
-        min.x -= 0.16f;
-        max.x += 0.16f;
-        min.z -= 0.14f;
-        max.z += 0.14f;
-        max.y += 0.08f;
+        min.x -= 0.18f;
+        max.x += 0.18f;
+        min.z -= 0.16f;
+        max.z += 0.16f;
+        min.y -= 0.06f;
+        max.y += 0.1f;
 
-        float standBottom = standColliderCenter.y - standColliderSize.y * 0.5f;
-        if (min.y < standBottom)
-            min.y = standBottom;
+        if (!downed)
+        {
+            float standBottom = standColliderCenter.y - standColliderSize.y * 0.5f;
+            if (min.y < standBottom)
+                min.y = standBottom;
+        }
 
-        if (max.y - min.y > standColliderSize.y * 0.75f)
+        float height = max.y - min.y;
+        if (!downed && height > standColliderSize.y * 0.75f)
         {
             RestoreStandCollider();
             return;
         }
 
         Vector3 size = max - min;
-        size.x = Mathf.Max(size.x, 0.45f);
-        size.y = Mathf.Max(size.y, 0.35f);
-        size.z = Mathf.Max(size.z, 0.45f);
+        size.x = Mathf.Max(size.x, 0.5f);
+        size.y = Mathf.Max(size.y, downed ? 0.28f : 0.35f);
+        size.z = Mathf.Max(size.z, 0.5f);
+        if (downed && size.y < 0.35f)
+        {
+            float extra = 0.35f - size.y;
+            size.y = 0.35f;
+            max.y += extra;
+        }
+
         bodyBox.size = size;
         bodyBox.center = (min + max) * 0.5f;
     }
