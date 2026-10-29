@@ -1200,6 +1200,8 @@ public class TickToyMove : MonoBehaviour
         if (hud != null)
             hud.SetHp(hp);
 
+        HitFeedback.PlayTickToyHit(transform);
+
         if (hp <= 0)
         {
             EnterDead();
@@ -1212,8 +1214,6 @@ public class TickToyMove : MonoBehaviour
 
         if (animationController != null)
             animationController.PlayGetHit();
-
-        HitFeedback.PlayTickToyHit(transform);
     }
 
     public void BreakFaint()

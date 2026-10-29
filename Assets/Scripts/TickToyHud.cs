@@ -36,6 +36,8 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Text hpText;
     [SerializeField] private GameObject windRoot;
     [SerializeField] private Image windFill;
+    [SerializeField] private GameObject abilityTimerRoot;
+    [SerializeField] private Image abilityTimerFill;
     [SerializeField] private GameObject abilityIconRoot;
     [SerializeField] private Image abilityIcon;
     [SerializeField] private Text abilityFallbackText;
@@ -72,6 +74,7 @@ public class TickToyHud : MonoBehaviour
 
         ShowEmptyAbility();
         EnsureDamageFlashUi();
+        HideAbilityTimer();
         if (hpText != null)
         {
             hpTextBaseScale = hpText.rectTransform.localScale;
@@ -274,6 +277,7 @@ public class TickToyHud : MonoBehaviour
         if (windRoot == null || windFill == null)
             return;
 
+        HideAbilityTimer();
         windRoot.SetActive(true);
         if (windLabel != null)
         {
@@ -292,6 +296,13 @@ public class TickToyHud : MonoBehaviour
     {
         if (windRoot != null)
             windRoot.SetActive(false);
+        HideAbilityTimer();
+    }
+
+    void HideAbilityTimer()
+    {
+        if (abilityTimerRoot != null)
+            abilityTimerRoot.SetActive(false);
     }
 
     public void HideAll()
@@ -384,31 +395,43 @@ public class TickToyHud : MonoBehaviour
             if (toys[i].FaintCancelled)
                 faintCancelled = true;
 
-            if (toys[i].IsUsingAbility && !toys[i].IsFainted)
-                usingToy = toys[i];
-            else if (toys[i].IsFainted)
+            // 달리기 / 드러눕기만 타이머 UI. 분신술은 스크롤바·타이머 없음.
+            if (toys[i].IsFainted)
                 faintToy = toys[i];
+            else if (toys[i].State == TickToyMove.TickToyState.Run)
+                usingToy = toys[i];
         }
 
         if (usingToy == null && faintToy != null && !faintCancelled)
             usingToy = faintToy;
 
-        if (usingToy == null || windRoot == null || windFill == null)
+        if (usingToy == null)
             return false;
 
         if (usingToy.AbilityDuration <= 0f)
         {
-            HideGauge();
+            if (windRoot != null)
+                windRoot.SetActive(false);
+            HideAbilityTimer();
             return true;
         }
 
-        windRoot.SetActive(true);
-        if (windLabel != null)
-            windLabel.gameObject.SetActive(false);
+        if (windRoot != null)
+            windRoot.SetActive(false);
 
         float amount = Mathf.Clamp01(usingToy.AbilityTimeLeft / usingToy.AbilityDuration);
-        windFill.rectTransform.anchorMax = new Vector2(amount, 1f);
+        ShowAbilityTimer(amount);
         return true;
+    }
+
+    void ShowAbilityTimer(float remaining01)
+    {
+        if (abilityTimerRoot == null || abilityTimerFill == null)
+            return;
+
+        abilityTimerRoot.SetActive(true);
+        // 남은 시간만큼만 보이고, 지나간 구간은 시계방향으로 사라짐
+        abilityTimerFill.fillAmount = Mathf.Clamp01(remaining01);
     }
 
     bool IsAnyTickToyWinding()

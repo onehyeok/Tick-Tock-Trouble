@@ -53,20 +53,30 @@ public static class HitFeedback
 
         Camera cam = Camera.main;
         Vector3 camRight = cam != null ? cam.transform.right : Vector3.right;
-        Vector3 camUp = cam != null ? cam.transform.up : Vector3.up;
+        Vector3 camFwd = Vector3.forward;
+        if (cam != null)
+        {
+            camFwd = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+            if (camFwd.sqrMagnitude < 0.0001f)
+                camFwd = cam.transform.forward;
+            camFwd.Normalize();
+        }
 
         for (int i = 0; i < ScrewCount; i++)
         {
             float s = Random.Range(0.22f, 0.38f);
             baseScale[i] = s;
 
+            // 절반은 왼쪽, 절반은 오른쪽 — 양쪽으로 튀게
+            float side = (i < ScrewCount / 2 ? -1f : 1f) * Random.Range(0.65f, 1.15f);
+            float up = Random.Range(0.35f, 1.05f);
+            float depth = Random.Range(-0.75f, 0.75f);
+
             GameObject go = new GameObject("CartoonScrew");
-            Vector2 radial = Random.insideUnitCircle.normalized;
-            if (radial.sqrMagnitude < 0.01f)
-                radial = Vector2.right;
             go.transform.position = origin
-                + camRight * (radial.x * 0.08f)
-                + camUp * (radial.y * 0.08f + 0.05f);
+                + camRight * (side * 0.1f)
+                + Vector3.up * 0.08f
+                + camFwd * (depth * 0.06f);
 
             SpriteRenderer sr = go.AddComponent<SpriteRenderer>();
             sr.sprite = screwSprite;
@@ -78,9 +88,8 @@ public static class HitFeedback
             go.transform.localScale = Vector3.zero; // 팝 인
             go.transform.rotation = Quaternion.Euler(0f, 0f, Random.Range(0f, 360f));
 
-            // 화면 기준으로 사방 튀기기 (만화 이펙트)
-            Vector3 dir = (camRight * radial.x + camUp * (radial.y + 0.55f) + Vector3.up * 0.35f).normalized;
-            velocities[i] = dir * Random.Range(2.8f, 4.8f);
+            Vector3 dir = (camRight * side + Vector3.up * up + camFwd * depth).normalized;
+            velocities[i] = dir * Random.Range(2.8f, 5.0f);
             spinSpeeds[i] = Random.Range(-560f, 560f);
             pieces[i] = go.transform;
             sprites[i] = sr;
