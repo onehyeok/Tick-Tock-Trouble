@@ -90,6 +90,8 @@ public class TickToyMove : MonoBehaviour
     private int grantedAbility;
     private int grantedLevel;
     private float abilityDuration;
+    private float runDuration;
+    private float faintDuration;
     private int hp = 100;
 
     public WinderMove FindWinderInReach()
@@ -159,13 +161,27 @@ public class TickToyMove : MonoBehaviour
     public bool IsUsingAbility =>
         State == TickToyState.Run || State == TickToyState.Faint
         || runTimeLeft > 0f || duplicateTimeLeft > 0f;
-    public float AbilityDuration => abilityDuration;
+    /// <summary>타이머 UI용 총 시간. 분신 사용이 달리기/드러눕기 값을 덮어쓰지 않음.</summary>
+    public float AbilityDuration
+    {
+        get
+        {
+            if (State == TickToyState.Run || runTimeLeft > 0f)
+                return runDuration;
+            if (IsFainted)
+                return faintDuration;
+            return abilityDuration;
+        }
+    }
+
     public float AbilityTimeLeft
     {
         get
         {
-            if (runTimeLeft > 0f)
+            if (State == TickToyState.Run || runTimeLeft > 0f)
                 return runTimeLeft;
+            if (IsFainted)
+                return faintTimeLeft;
             if (duplicateTimeLeft > 0f)
                 return duplicateTimeLeft;
             return faintTimeLeft;
@@ -872,13 +888,14 @@ public class TickToyMove : MonoBehaviour
             return;
 
         if (level <= 1)
-            abilityDuration = 5f;
+            runDuration = 5f;
         else if (level == 2)
-            abilityDuration = 8f;
+            runDuration = 8f;
         else
-            abilityDuration = 12f;
+            runDuration = 12f;
 
-        runTimeLeft = abilityDuration;
+        abilityDuration = runDuration;
+        runTimeLeft = runDuration;
         if (State != TickToyState.Faint)
             State = TickToyState.Run;
     }
@@ -902,13 +919,14 @@ public class TickToyMove : MonoBehaviour
             rb.useGravity = true;
         }
         if (level <= 1)
-            abilityDuration = 10f;
+            faintDuration = 10f;
         else if (level == 2)
-            abilityDuration = 20f;
+            faintDuration = 20f;
         else
-            abilityDuration = -1f;
+            faintDuration = -1f;
 
-        faintTimeLeft = abilityDuration;
+        abilityDuration = faintDuration;
+        faintTimeLeft = faintDuration;
     }
 
     public void UseDuplicateAbility(int level)
@@ -917,25 +935,27 @@ public class TickToyMove : MonoBehaviour
             return;
 
         int cloneCount;
+        float duplicateDuration;
         if (level <= 1)
         {
-            abilityDuration = 3f;
+            duplicateDuration = 3f;
             cloneCount = 1;
         }
         else if (level == 2)
         {
-            abilityDuration = 5f;
+            duplicateDuration = 5f;
             cloneCount = 2;
         }
         else
         {
-            abilityDuration = 7f;
+            duplicateDuration = 7f;
             cloneCount = 4;
         }
 
-        duplicateTimeLeft = abilityDuration;
+        // 달리기/드러눕기 타이머용 abilityDuration·runDuration은 건드리지 않음
+        duplicateTimeLeft = duplicateDuration;
         SpawnDuplicates(cloneCount);
-        SpawnDuplicateCloud(abilityDuration);
+        SpawnDuplicateCloud(duplicateDuration);
     }
 
     void SpawnDuplicates(int count)

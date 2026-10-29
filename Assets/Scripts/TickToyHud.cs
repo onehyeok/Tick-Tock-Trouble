@@ -94,18 +94,23 @@ public class TickToyHud : MonoBehaviour
             ConsumeAbility();
 
         bool winding = abilityLevel < 3 && IsAnyTickToyWinding();
+        bool showingAbilityTimer = ShowUsingGauge();
+
         if (winding)
         {
+            // 달리기/드러눕기 타이머는 유지한 채 태엽 바 표시
             ShowWindGauge();
             return;
         }
 
         windProgress = 0f;
+        if (windRoot != null)
+            windRoot.SetActive(false);
 
-        if (ShowUsingGauge())
+        if (showingAbilityTimer)
             return;
 
-        HideGauge();
+        HideAbilityTimer();
     }
 
     /// <summary>브릭(와인더)이 AI 때려서 자해 피해 입을 때 — 귀여운 화면/HP 연출.</summary>
@@ -277,7 +282,6 @@ public class TickToyHud : MonoBehaviour
         if (windRoot == null || windFill == null)
             return;
 
-        HideAbilityTimer();
         windRoot.SetActive(true);
         if (windLabel != null)
         {
@@ -410,16 +414,14 @@ public class TickToyHud : MonoBehaviour
 
         if (usingToy.AbilityDuration <= 0f)
         {
-            if (windRoot != null)
-                windRoot.SetActive(false);
             HideAbilityTimer();
             return true;
         }
 
-        if (windRoot != null)
-            windRoot.SetActive(false);
-
-        float amount = Mathf.Clamp01(usingToy.AbilityTimeLeft / usingToy.AbilityDuration);
+        float duration = usingToy.AbilityDuration;
+        float amount = duration > 0.0001f
+            ? Mathf.Clamp01(usingToy.AbilityTimeLeft / duration)
+            : 0f;
         ShowAbilityTimer(amount);
         return true;
     }
