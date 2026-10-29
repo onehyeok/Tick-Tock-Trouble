@@ -1,9 +1,17 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Animations;
 using UnityEngine.Events;
+using UnityEngine.Playables;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 public class TickToyAnimation : MonoBehaviour
 {
+    const string Dance1Path = "Assets/Animations/T_Dance_1/T_Dance_1/T_Dance_1.fbx";
+    const string Dance2Path = "Assets/Animations/T_Dance_2/T_Dance_2/T_Dance_2.fbx";
+
     private Animator animator;
     private TickToyMove move;
     private GameObject[] spineSprings;
@@ -15,9 +23,14 @@ public class TickToyAnimation : MonoBehaviour
     private Quaternion modelRestLocalRot = Quaternion.identity;
     private bool modelShifted;
     private bool ignoreWindUntilRelease;
+    private PlayableGraph danceGraph;
+    private bool isDancing;
+    private float danceEndTime;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 11f;
+    [SerializeField] private AnimationClip dance1Clip;
+    [SerializeField] private AnimationClip dance2Clip;
 
     void Awake()
     {
@@ -27,6 +40,7 @@ public class TickToyAnimation : MonoBehaviour
             animator.applyRootMotion = false;
         CacheSpineSprings();
         SetSpineSpringsActive(false);
+        EnsureDanceClips();
 
         if (animator != null && animator.isHuman)
         {
@@ -35,6 +49,16 @@ public class TickToyAnimation : MonoBehaviour
             leftLowerLeg = animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
             rightLowerLeg = animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
         }
+    }
+
+    void OnDisable()
+    {
+        StopDance();
+    }
+
+    void OnDestroy()
+    {
+        StopDance();
     }
 
     void Update()
@@ -51,14 +75,28 @@ public class TickToyAnimation : MonoBehaviour
         switch (move.State)
         {
             case TickToyMove.TickToyState.Dead:
+                StopDance();
                 return;
             case TickToyMove.TickToyState.Faint:
+                StopDance();
                 animator.SetBool("IsWinding", false);
                 move.IsWinding = false;
                 SetSpineSpringsActive(false);
                 SetFaint(true);
                 return;
         }
+
+        if (isDancing && Time.time >= danceEndTime)
+            StopDance();
+
+        // TickToy only: Z = T_Dance_1, X = T_Dance_2
+        if (Input.GetKeyDown(KeyCode.Z))
+            PlayDance(dance1Clip);
+        else if (Input.GetKeyDown(KeyCode.X))
+            PlayDance(dance2Clip);
+
+        if (isDancing)
+            return;
 
         Jump();
         UpdateWind();
@@ -379,9 +417,73 @@ public class TickToyAnimation : MonoBehaviour
 
     public void SetMove(bool isMove)
     {
+        if (isMove && isDancing)
+            StopDance();
+
+        if (isDancing)
+            return;
+
         if (isMove)
             ApplyRunDirection(move.MoveInput);
         animator.SetInteger("State", isMove ? 1 : 0);
+    }
+
+    void EnsureDanceClips()
+    {
+        if (dance1Clip == null)
+            dance1Clip = LoadFirstAnimationClip(Dance1Path);
+        if (dance2Clip == null)
+            dance2Clip = LoadFirstAnimationClip(Dance2Path);
+    }
+
+    static AnimationClip LoadFirstAnimationClip(string assetPath)
+    {
+#if UNITY_EDITOR
+        Object[] assets = AssetDatabase.LoadAllAssetsAtPath(assetPath);
+        for (int i = 0; i < assets.Length; i++)
+        {
+            AnimationClip clip = assets[i] as AnimationClip;
+            if (clip == null || clip.name.StartsWith("__preview__"))
+                continue;
+            return clip;
+        }
+#endif
+        return null;
+    }
+
+    void PlayDance(AnimationClip clip)
+    {
+        if (clip == null || animator == null || move == null)
+            return;
+        if (move.IsDead || move.IsFainted)
+            return;
+
+        EnsureDanceClips();
+        if (clip == null)
+            return;
+
+        StopDance();
+
+        danceGraph = PlayableGraph.Create("TickToyDance");
+        danceGraph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
+        AnimationPlayableOutput output = AnimationPlayableOutput.Create(danceGraph, "Dance", animator);
+        AnimationClipPlayable playable = AnimationClipPlayable.Create(danceGraph, clip);
+        playable.SetDuration(clip.length);
+        output.SetSourcePlayable(playable);
+        danceGraph.Play();
+
+        isDancing = true;
+        danceEndTime = Time.time + Mathf.Max(0.1f, clip.length);
+        animator.SetBool("IsWinding", false);
+        move.IsWinding = false;
+        SetSpineSpringsActive(false);
+    }
+
+    void StopDance()
+    {
+        if (danceGraph.IsValid())
+            danceGraph.Destroy();
+        isDancing = false;
     }
 
     void ApplyRunDirection(Vector2 input)

@@ -278,7 +278,7 @@ public class TickToyHud : MonoBehaviour
         if (windLabel != null)
         {
             windLabel.gameObject.SetActive(true);
-            windLabel.text = "태엽을 감는중입니다.";
+            windLabel.text = "태엽을 감는중...";
         }
 
         windProgress += Time.deltaTime / Mathf.Max(0.1f, windDuration);
