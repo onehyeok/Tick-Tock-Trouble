@@ -75,6 +75,7 @@ public class WinderMove : MonoBehaviour
     private float faintTimeLeft;
     private bool faintCanBreak;
     private bool faintOnGround;
+    private bool deadSettled;
     private float freezeTimeLeft;
     private bool freezeHeldBody;
     private bool goldClubActive;
@@ -134,14 +135,44 @@ public class WinderMove : MonoBehaviour
 
         State = WinderState.Dead;
         hp = 0;
-        if (rb != null && !rb.isKinematic)
+
+        // 점프 중 사망 시 공중 고정 방지 — 바닥에 닿을 때까지 중력 유지
+        bool onGround = isGrounded || FeetNearGround();
+        if (onGround)
         {
-            rb.linearVelocity = Vector3.zero;
-            rb.isKinematic = true;
+            deadSettled = true;
+            SetBodySolid(false);
+        }
+        else
+        {
+            deadSettled = false;
+            if (bodyCollider != null)
+                bodyCollider.enabled = true;
+            if (rb != null)
+            {
+                rb.isKinematic = false;
+                rb.useGravity = true;
+                Vector3 v = rb.linearVelocity;
+                v.x = 0f;
+                v.z = 0f;
+                rb.linearVelocity = v;
+            }
         }
 
         if (animationController != null)
             animationController.SetFaint(true);
+    }
+
+    void TickDeadFall()
+    {
+        if (deadSettled)
+            return;
+
+        if (isGrounded || FeetNearGround())
+        {
+            deadSettled = true;
+            SetBodySolid(false);
+        }
     }
 
     void Awake()
@@ -350,6 +381,7 @@ public class WinderMove : MonoBehaviour
         {
             if (IsFrozen)
                 EndFreeze();
+            TickDeadFall();
             return;
         }
 
