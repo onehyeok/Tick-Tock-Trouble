@@ -51,6 +51,9 @@ public class TickToyAI : MonoBehaviour
     float jumpDuration;
     float jumpPeakHeight;
     bool startMovingNow;
+    float stuckTimer;
+    Vector3 lastProgressPos;
+    static readonly Collider[] OverlapBuf = new Collider[24];
 
     public int Hp => hp;
     public bool IsDead => dead;
@@ -73,10 +76,6 @@ public class TickToyAI : MonoBehaviour
         animator = GetComponentInChildren<Animator>();
         if (animator != null)
             animator.applyRootMotion = false;
-
-        var agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
-        if (agent != null)
-            agent.enabled = false;
 
         if (rb != null)
         {
@@ -150,7 +149,11 @@ public class TickToyAI : MonoBehaviour
             settleTimer -= Time.deltaTime;
             ForceToGround(true);
             if (settleTimer <= 0f)
+            {
                 settled = true;
+                ResolveWorldPenetration();
+                lastProgressPos = transform.position;
+            }
             SetAnimMove(Vector2.zero, false);
             return;
         }
@@ -194,19 +197,22 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
-        // 점프 중이 아닐 때만 지면 Y 고정
         StickYToGround();
+        ResolveWorldPenetration();
 
-        if (!settled || state != AiState.Run || currentSpeed < 0.01f)
+        if (!settled || state != AiState.Run)
             return;
+
+        // ???? ?? 0?? ??? ?? ? ??? ??
+        if (currentSpeed < 0.01f)
+            currentSpeed = walkSpeed;
 
         Vector3 dir = moveDir;
         if (IsBlocked(dir))
         {
             if (!TrySlideDir(out dir))
             {
-                currentSpeed = 0f;
-                SetAnimMove(Vector2.zero, false);
+                EscapeStuck();
                 return;
             }
             moveDir = dir;
@@ -214,7 +220,7 @@ public class TickToyAI : MonoBehaviour
 
         if (!HasGroundAhead(moveDir))
         {
-            PickRandomMoveDir();
+            PickClearMoveDir();
             return;
         }
 
@@ -233,8 +239,16 @@ public class TickToyAI : MonoBehaviour
             next.y = lockedGroundY;
         }
 
+        // ?? ?? ??? ?? ? ???? ? ?
+        if (WouldOverlapAt(next))
+        {
+            EscapeStuck();
+            return;
+        }
+
         rb.MovePosition(next);
         SetAnimMove(new Vector2(0f, 1f), false);
+        TrackProgress(next);
     }
 
     void TickJumpMotion()
@@ -403,9 +417,10 @@ public class TickToyAI : MonoBehaviour
         state = AiState.Run;
         stateTimer = Random.Range(runMin, runMax);
         currentSpeed = Random.value < 0.35f ? runSpeed : walkSpeed;
-        PickRandomMoveDir();
-        for (int i = 0; i < 8 && (IsBlocked(moveDir) || !HasGroundAhead(moveDir)); i++)
-            PickRandomMoveDir();
+        stuckTimer = 0f;
+        lastProgressPos = rb != null ? rb.position : transform.position;
+        ResolveWorldPenetration();
+        PickClearMoveDir();
 
         if (rb != null)
             rb.MoveRotation(Quaternion.LookRotation(moveDir, Vector3.up));
@@ -437,19 +452,220 @@ public class TickToyAI : MonoBehaviour
         moveDir = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f) * Vector3.forward;
     }
 
-    bool TrySlideDir(out Vector3 dir)
+    void PickClearMoveDir()
     {
-        Vector3 right = Vector3.Cross(Vector3.up, moveDir).normalized;
-        if (!IsBlocked(right) && HasGroundAhead(right))
+        for (int i = 0; i < 16; i++)
         {
-            dir = right;
-            return true;
+            PickRandomMoveDir();
+            if (!IsBlocked(moveDir) && HasGroundAhead(moveDir))
+                return;
         }
 
-        if (!IsBlocked(-right) && HasGroundAhead(-right))
+        // ?? ??? ????
+        moveDir = -moveDir;
+        if (moveDir.sqrMagnitude < 0.01f)
+            moveDir = Vector3.forward;
+        moveDir.Normalize();
+    }
+
+    void TrackProgress(Vector3 pos)
+    {
+        Vector3 flat = pos - lastProgressPos;
+        flat.y = 0f;
+        if (flat.sqrMagnitude > 0.04f)
         {
-            dir = -right;
-            return true;
+            lastProgressPos = pos;
+            stuckTimer = 0f;
+            return;
+        }
+
+        stuckTimer += Time.fixedDeltaTime;
+        if (stuckTimer >= 0.45f)
+            EscapeStuck();
+    }
+
+    void EscapeStuck()
+    {
+        stuckTimer = 0f;
+        ResolveWorldPenetration();
+        NudgeToClearSpot();
+        PickClearMoveDir();
+        if (currentSpeed < walkSpeed)
+            currentSpeed = walkSpeed;
+        SetAnimMove(new Vector2(0f, 1f), false);
+    }
+
+    void NudgeToClearSpot()
+    {
+        Vector3 origin = rb != null ? rb.position : transform.position;
+        for (int i = 0; i < 12; i++)
+        {
+            float ang = (360f / 12f) * i + Random.Range(0f, 20f);
+            Vector3 candidate = origin + Quaternion.Euler(0f, ang, 0f) * Vector3.forward * Random.Range(0.6f, 1.6f);
+            if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(candidate, lockedGroundY, out Vector3 g))
+                candidate = g;
+            else
+                candidate.y = lockedGroundY;
+
+            if (WouldOverlapAt(candidate))
+                continue;
+
+            if (rb != null)
+                rb.MovePosition(candidate);
+            else
+                transform.position = candidate;
+            lastProgressPos = candidate;
+            lockedGroundY = candidate.y;
+            return;
+        }
+    }
+
+    void ResolveWorldPenetration()
+    {
+        if (bodyCollider == null || rb == null)
+            return;
+
+        Vector3 pos = rb.position;
+        GetBodyProbe(pos, out Vector3 center, out Vector3 half);
+
+        int count = Physics.OverlapBoxNonAlloc(
+            center, half, OverlapBuf, transform.rotation, ~0, QueryTriggerInteraction.Ignore);
+
+        Vector3 push = Vector3.zero;
+        for (int i = 0; i < count; i++)
+        {
+            Collider other = OverlapBuf[i];
+            if (other == null || other == bodyCollider)
+                continue;
+            if (other.transform.IsChildOf(transform) || transform.IsChildOf(other.transform))
+                continue;
+            // ?? AI/????? SeparateFromPlayersOnly ???
+            if (other.GetComponentInParent<TickToyAI>() != null)
+                continue;
+            if (other.GetComponentInParent<TickToyMove>() != null)
+                continue;
+            if (other.GetComponentInParent<WinderMove>() != null)
+                continue;
+
+            if (!Physics.ComputePenetration(
+                    bodyCollider, pos, transform.rotation,
+                    other, other.transform.position, other.transform.rotation,
+                    out Vector3 dir, out float dist))
+                continue;
+
+            // ?? ??(??) ??? ?? ? StickYToGround? ??
+            if (dir.y > 0.65f)
+                continue;
+
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                continue;
+            dir.Normalize();
+            push += dir * (dist + 0.03f);
+        }
+
+        if (push.sqrMagnitude < 0.00001f)
+            return;
+
+        if (push.sqrMagnitude > 1.5f * 1.5f)
+            push = push.normalized * 1.5f;
+
+        Vector3 freed = pos + push;
+        freed.y = lockedGroundY;
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(freed, lockedGroundY, out Vector3 ground))
+        {
+            lockedGroundY = ground.y;
+            freed.y = lockedGroundY;
+        }
+
+        rb.MovePosition(freed);
+        lastProgressPos = freed;
+    }
+
+    void GetBodyProbe(Vector3 worldPos, out Vector3 center, out Vector3 half)
+    {
+        BoxCollider box = bodyCollider as BoxCollider;
+        if (box != null)
+        {
+            Vector3 local = box.center + Vector3.up * 0.12f;
+            local.y += 0.05f;
+            center = worldPos + transform.rotation * Vector3.Scale(local, transform.lossyScale);
+            // ??? ?? ??? ? ??/?? ?? ?? ??
+            Vector3 size = Vector3.Scale(box.size, transform.lossyScale);
+            half = size * 0.5f;
+            half.x = Mathf.Max(0.12f, half.x * 0.75f);
+            half.y = Mathf.Max(0.35f, half.y * 0.55f);
+            half.z = Mathf.Max(0.12f, half.z * 0.75f);
+            center.y = worldPos.y + half.y + 0.08f;
+            return;
+        }
+
+        Bounds b = bodyCollider.bounds;
+        Vector3 delta = worldPos - b.center;
+        delta.y = worldPos.y - (rb != null ? rb.position.y : transform.position.y);
+        center = b.center + delta + Vector3.up * 0.2f;
+        half = b.extents;
+        half.x = Mathf.Max(0.12f, half.x * 0.75f);
+        half.y = Mathf.Max(0.35f, half.y * 0.55f);
+        half.z = Mathf.Max(0.12f, half.z * 0.75f);
+        center.y = worldPos.y + half.y + 0.08f;
+    }
+
+    bool WouldOverlapAt(Vector3 worldPos)
+    {
+        if (bodyCollider == null)
+            return false;
+
+        GetBodyProbe(worldPos, out Vector3 center, out Vector3 half);
+
+        int count = Physics.OverlapBoxNonAlloc(
+            center, half, OverlapBuf, transform.rotation, ~0, QueryTriggerInteraction.Ignore);
+
+        for (int i = 0; i < count; i++)
+        {
+            Collider other = OverlapBuf[i];
+            if (other == null || other == bodyCollider)
+                continue;
+            if (other.transform.IsChildOf(transform) || transform.IsChildOf(other.transform))
+                continue;
+            if (other.GetComponentInParent<TickToyAI>() != null)
+                continue;
+            if (other.GetComponentInParent<TickToyMove>() != null)
+                continue;
+
+            Vector3 closest = other.ClosestPoint(center);
+            Vector3 to = center - closest;
+            to.y = 0f;
+            // ??? ??(?? ??)? ??
+            float vertical = Mathf.Abs(center.y - closest.y);
+            if (to.sqrMagnitude < 0.0004f && vertical > half.y * 0.4f)
+                continue;
+            if (to.sqrMagnitude < 0.0004f)
+                return true;
+
+            // ???? ??? ??? ??? ??
+            if (to.magnitude < Mathf.Max(half.x, half.z) * 0.55f)
+                return true;
+        }
+
+        return false;
+    }
+
+    bool TrySlideDir(out Vector3 dir)
+    {
+        float[] yaws = { 55f, -55f, 90f, -90f, 125f, -125f, 160f, -160f, 180f };
+        for (int i = 0; i < yaws.Length; i++)
+        {
+            Vector3 candidate = Quaternion.Euler(0f, yaws[i], 0f) * moveDir;
+            candidate.y = 0f;
+            if (candidate.sqrMagnitude < 0.01f)
+                continue;
+            candidate.Normalize();
+            if (!IsBlocked(candidate) && HasGroundAhead(candidate))
+            {
+                dir = candidate;
+                return true;
+            }
         }
 
         dir = moveDir;
@@ -458,11 +674,25 @@ public class TickToyAI : MonoBehaviour
 
     bool IsBlocked(Vector3 dir)
     {
-        Vector3 origin = transform.position + Vector3.up * 0.55f;
-        if (!Physics.SphereCast(origin, 0.25f, dir, out RaycastHit hit, 0.55f, ~0, QueryTriggerInteraction.Ignore))
+        if (dir.sqrMagnitude < 0.0001f)
+            return true;
+        dir.Normalize();
+
+        // ?? ?? SphereCast? ?? ??? ???? ??(?? normal ??)
+        Vector3 origin = transform.position + Vector3.up * 0.7f;
+        float radius = 0.22f;
+        float dist = 0.55f;
+        if (!Physics.SphereCast(origin, radius, dir, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore))
             return false;
         if (hit.collider != null && hit.collider.transform.IsChildOf(transform))
             return false;
+
+        // ?? ? ?? ??/?? ?? ???? ?? ??
+        if (hit.normal.y >= 0.45f)
+            return false;
+        if (hit.point.y <= lockedGroundY + 0.28f && hit.normal.y >= 0.2f)
+            return false;
+
         return true;
     }
 
@@ -470,7 +700,10 @@ public class TickToyAI : MonoBehaviour
     {
         Vector3 probe = transform.position + dir * 0.85f;
         probe.y = lockedGroundY + 1f;
-        return AiGroundUtil.TryFindGroundNearPlayerOrWorld(probe, lockedGroundY, out _);
+        if (!AiGroundUtil.TryFindGroundNearPlayerOrWorld(probe, lockedGroundY, out Vector3 g))
+            return false;
+        // ????/???? ??
+        return Mathf.Abs(g.y - lockedGroundY) <= 0.85f;
     }
 
     void SetAnimMove(Vector2 move, bool prone)

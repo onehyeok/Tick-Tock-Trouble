@@ -93,6 +93,8 @@ public class TickToyMove : MonoBehaviour
     private float runDuration;
     private float faintDuration;
     private int hp = 100;
+    private float trapFreezeLeft;
+    private bool trapHeldBody;
 
     public WinderMove FindWinderInReach()
     {
@@ -190,6 +192,54 @@ public class TickToyMove : MonoBehaviour
 
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
+
+    public bool IsTrapFrozen => trapFreezeLeft > 0f;
+
+    bool IsTickToyCameraActive()
+    {
+        if (tpsCamera != null && tpsCamera.enabled && tpsCamera.gameObject.activeInHierarchy)
+            return true;
+        if (cameraPivot == null)
+            return false;
+        Camera cam = cameraPivot.GetComponent<Camera>();
+        return cam != null && cam.enabled && cam.gameObject.activeInHierarchy;
+    }
+
+    /// <summary>와인더 덫 — 지정 초 동안 이동·입력 불가.</summary>
+    public void TrapFreeze(float seconds)
+    {
+        if (State == TickToyState.Dead)
+            return;
+
+        trapFreezeLeft = Mathf.Max(0.05f, seconds);
+        MoveInput = Vector2.zero;
+        if (animationController != null)
+            animationController.SetMove(false);
+        if (bodyAnimator != null)
+            bodyAnimator.speed = 0f;
+
+        if (rb != null && !rb.isKinematic)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            trapHeldBody = true;
+        }
+    }
+
+    void EndTrapFreeze()
+    {
+        trapFreezeLeft = 0f;
+        if (bodyAnimator != null)
+            bodyAnimator.speed = 1f;
+
+        if (!trapHeldBody || rb == null)
+            return;
+
+        trapHeldBody = false;
+        if (State != TickToyState.Dead && State != TickToyState.Faint)
+            rb.isKinematic = false;
+    }
 
     public bool IsDead
     {
@@ -361,9 +411,12 @@ public class TickToyMove : MonoBehaviour
         KeepStep();
 
         // AI 등 외부 충돌이 플레이어를 옆으로 밀지 못하게, 수평 속도는 입력만 반영
+        // 소품/잔디 끼임 시에도 입력 방향으로 빠져나오게 함
         if (rb != null && isGrounded && State != TickToyState.Faint && State != TickToyState.Dead)
         {
-            Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+            Vector3 planar = PlayerUnstickUtil.SlideWishAgainstWalls(
+                bodyCollider, transform, PlanarVelocity(State == TickToyState.Run ? 2f : 1f));
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, planar);
             Vector3 velocity = rb.linearVelocity;
             velocity.x = planar.x;
             velocity.z = planar.z;
@@ -373,15 +426,24 @@ public class TickToyMove : MonoBehaviour
 
     void OnCollisionStay(Collision collision)
     {
-        ClimbLowContact(collision, PlanarVelocity(State == TickToyState.Run ? 2f : 1f));
+        Vector3 wish = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+        ClimbLowContact(collision, wish);
 
-        // AI와는 통과하지 않고 비비기만: AI가 플레이어를 밀면 위치/속도 되돌림
         if (rb == null || collision == null)
             return;
+
+        // 월드 콜라이더에 끼면 탈출
+        if (collision.collider.GetComponentInParent<TickToyAI>() == null
+            && State != TickToyState.Faint && State != TickToyState.Dead)
+        {
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, wish);
+        }
+
+        // AI와는 통과하지 않고 비비기만: AI가 플레이어를 밀면 위치/속도 되돌림
         if (collision.collider.GetComponentInParent<TickToyAI>() == null)
             return;
 
-        Vector3 planar = PlanarVelocity(State == TickToyState.Run ? 2f : 1f);
+        Vector3 planar = wish;
         Vector3 v = rb.linearVelocity;
         v.x = planar.x;
         v.z = planar.z;
@@ -401,9 +463,23 @@ public class TickToyMove : MonoBehaviour
 
     void Update()
     {
+        if (enabled && State != TickToyState.Dead && IsTickToyCameraActive())
+            WinderTrap.ReportTickToyViewing();
+
         if (State == TickToyState.Dead)
         {
+            if (IsTrapFrozen)
+                EndTrapFreeze();
             TickDeadFall();
+            return;
+        }
+
+        if (trapFreezeLeft > 0f)
+        {
+            MoveInput = Vector2.zero;
+            trapFreezeLeft -= Time.deltaTime;
+            if (trapFreezeLeft <= 0f)
+                EndTrapFreeze();
             return;
         }
 
@@ -517,7 +593,8 @@ public class TickToyMove : MonoBehaviour
 
     bool WantsStand()
     {
-        return WantsRun() || Input.GetMouseButton(0) || Input.GetKey(KeyCode.Z);
+        return WantsRun() || Input.GetMouseButton(0)
+            || Input.GetKey(KeyCode.Z) || Input.GetKey(KeyCode.X) || Input.GetKey(KeyCode.C);
     }
 
     void Prone()
@@ -695,12 +772,14 @@ public class TickToyMove : MonoBehaviour
         if (!isGrounded)
             return;
 
-        Vector3 planar = PlanarVelocity(speedScale);
+        Vector3 planar = PlayerUnstickUtil.SlideWishAgainstWalls(
+            bodyCollider, transform, PlanarVelocity(speedScale));
         if (planar.sqrMagnitude > 0.01f)
             StepOverLowSeam(planar);
 
         if (rb != null)
         {
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, planar);
             Vector3 velocity = rb.linearVelocity;
             velocity.x = planar.x;
             velocity.z = planar.z;
@@ -830,6 +909,7 @@ public class TickToyMove : MonoBehaviour
             tpsCamera = cameraObject.AddComponent<Camera>();
             tpsCamera.fieldOfView = FixedFieldOfView;
             tpsCamera.nearClipPlane = 0.15f;
+            tpsCamera.depth = 10f;
             cameraPivot = cameraObject.transform;
             return;
         }
@@ -844,6 +924,9 @@ public class TickToyMove : MonoBehaviour
             tpsCamera.gameObject.SetActive(true);
             tpsCamera.fieldOfView = FixedFieldOfView;
             tpsCamera.nearClipPlane = 0.15f;
+            tpsCamera.depth = 10f; // 와인더보다 위 — 덫 시점 판별용
+            if (!tpsCamera.CompareTag("MainCamera"))
+                tpsCamera.tag = "MainCamera";
         }
     }
 
@@ -1299,6 +1382,9 @@ public class TickToyMove : MonoBehaviour
             return;
 
         State = TickToyState.Dead;
+        if (IsTrapFrozen)
+            EndTrapFreeze();
+        TrapOutlineUtil.Clear(transform);
         ClearDuplicates();
 
         // 점프 중 사망 시 공중 고정 방지 — 바닥에 닿을 때까지 중력 유지

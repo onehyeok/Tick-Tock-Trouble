@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -70,7 +71,13 @@ public class WinderMove : MonoBehaviour
     private const float FullTurnSeconds = 10f;
     private const int AbilityRun = 1;
     private const int AbilityGold = 4; // Brick 황금 몽둥이 (레벨 없음)
+    private const int AbilityTrap = 5; // 덫 (레벨 없음, 1회 설치)
     private const string GoldWeaponPath = "Assets/Models/BrickGoldWeapon/BrickGoldWeapon/BrickGoldWeapon.fbx";
+    private const string TrapModelPath = "Assets/Models/Trap/Trap/Trap.fbx";
+    private const float TrapTargetWidth = 1.35f;
+    private const string TrapMaterialPath = "Assets/Materials/Trap.mat";
+    private static readonly Color TrapPreviewValid = new Color(0.15f, 0.7f, 1f, 1f);
+    private static readonly Color TrapPreviewInvalid = new Color(1f, 0.12f, 0.1f, 1f);
 
     private int abilityKind;
     private int abilityLevel;
@@ -85,9 +92,18 @@ public class WinderMove : MonoBehaviour
     private Transform normalWeapon;
     private GameObject goldWeaponInstance;
     [SerializeField] private GameObject brickGoldWeaponPrefab;
+    [SerializeField] private GameObject trapPrefab;
+    private bool trapPlacing;
+    private bool trapPlaceValid;
+    private Vector3 trapPlacePos;
+    private GameObject trapPreview;
+    private Renderer[] trapPreviewRenderers;
+    private Material[] trapPreviewMatValid;
+    private Material[] trapPreviewMatInvalid;
 
     public bool IsFrozen => freezeTimeLeft > 0f;
     public bool IsGoldenClub => goldClubActive;
+    public bool IsPlacingTrap => trapPlacing;
 
     public Transform Spring
     {
@@ -236,6 +252,7 @@ public class WinderMove : MonoBehaviour
 
         fpsCamera.nearClipPlane = 0.02f;
         fpsCamera.fieldOfView = 70f;
+        fpsCamera.depth = 0f;
     }
 
     Transform FindChildNamed(string childName)
@@ -390,17 +407,39 @@ public class WinderMove : MonoBehaviour
             isGrounded = true;
 
         KeepStep();
+
+        // 소품/잔디 등에 끼면 입력 불능 — 탈출 + 벽 슬라이드
+        if (State != WinderState.Faint && State != WinderState.Dead)
+        {
+            Vector3 wish = PlanarVelocity();
+            wish = PlayerUnstickUtil.SlideWishAgainstWalls(bodyCollider, transform, wish);
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, wish);
+            if (rb != null && !rb.isKinematic && wish.sqrMagnitude > 0.01f && isGrounded)
+            {
+                Vector3 v = rb.linearVelocity;
+                v.x = wish.x;
+                v.z = wish.z;
+                rb.linearVelocity = v;
+            }
+        }
     }
 
     void OnCollisionStay(Collision collision)
     {
         ClimbLowContact(collision, PlanarVelocity());
+        if (State != WinderState.Faint && State != WinderState.Dead)
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, PlanarVelocity());
     }
 
     void Update()
     {
+        if (State != WinderState.Dead && IsWinderCameraActive())
+            WinderTrap.ReportWinderViewing();
+
         if (State == WinderState.Dead)
         {
+            if (trapPlacing)
+                CancelTrapPlacement(false);
             if (IsFrozen)
                 EndFreeze();
             TickDeadFall();
@@ -421,7 +460,19 @@ public class WinderMove : MonoBehaviour
             return;
         }
 
+        UpdateTrapTestKey();
         InputUpdate();
+
+        if (trapPlacing)
+        {
+            TickTrapPlacement();
+            Prone();
+            Look();
+            Move();
+            UpdateMoveAnimation();
+            return;
+        }
+
         if (PressedAbilityKey())
             UseAbility();
 
@@ -568,6 +619,10 @@ public class WinderMove : MonoBehaviour
         if (spring == null || State == WinderState.Dead)
             return;
 
+        // 덫 설치 모드(R 후 좌클릭 전): 태엽 정지 — 능력 지급도 멈춤
+        if (trapPlacing)
+            return;
+
         springDegrees += 360f / FullTurnSeconds * Time.deltaTime;
         while (springDegrees >= 360f)
         {
@@ -581,8 +636,8 @@ public class WinderMove : MonoBehaviour
     void CompleteSpringTurn()
     {
         // Brick 풀: 달리기 + 황금 몽둥이만 (드러눕기/기절 제외)
-        // 황금은 레벨 없음 — 이미 들고 있으면 다음 턴까지 유지
-        if (abilityKind == AbilityGold && abilityLevel > 0)
+        // 황금/덫은 레벨 없음 — 이미 들고 있으면 다음 턴까지 유지
+        if ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0)
             return;
 
         if (abilityKind == AbilityRun && abilityLevel >= 3)
@@ -598,6 +653,19 @@ public class WinderMove : MonoBehaviour
 
         if (hud != null)
             hud.PresentAbility(abilityKind, abilityLevel);
+    }
+
+    void UpdateTrapTestKey()
+    {
+        if (!(Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)))
+            return;
+        if (State == WinderState.Dead || trapPlacing)
+            return;
+
+        abilityKind = AbilityTrap;
+        abilityLevel = 1;
+        if (hud != null)
+            hud.PresentAbility(AbilityTrap, 1);
     }
 
     void UseAbility()
@@ -616,6 +684,416 @@ public class WinderMove : MonoBehaviour
             UseRunAbility(level);
         else if (kind == AbilityGold)
             UseGoldClubAbility();
+        else if (kind == AbilityTrap)
+            BeginTrapPlacement();
+    }
+
+    void BeginTrapPlacement()
+    {
+        if (State == WinderState.Dead)
+            return;
+
+        CancelTrapPlacement(false);
+        trapPlacing = true;
+        trapPlaceValid = false;
+        EnsureTrapPreview();
+    }
+
+    void CancelTrapPlacement(bool refundAbility)
+    {
+        trapPlacing = false;
+        trapPlaceValid = false;
+        if (trapPreview != null)
+            trapPreview.SetActive(false);
+
+        if (refundAbility)
+        {
+            abilityKind = AbilityTrap;
+            abilityLevel = 1;
+            if (hud != null)
+                hud.PresentAbility(AbilityTrap, 1);
+        }
+    }
+
+    void TickTrapPlacement()
+    {
+        if (Input.GetMouseButtonDown(1))
+        {
+            CancelTrapPlacement(true);
+            return;
+        }
+
+        EnsureTrapPreview();
+        UpdateTrapPreviewPose();
+
+        if (Input.GetMouseButtonDown(0) && trapPlaceValid)
+            PlaceTrapAtPreview();
+    }
+
+    void EnsureTrapPreview()
+    {
+        if (trapPreview != null)
+        {
+            trapPreview.SetActive(true);
+            return;
+        }
+
+        GameObject prefab = LoadTrapPrefab();
+        if (prefab == null)
+        {
+            Debug.LogWarning("[WinderMove] Trap 모델을 불러오지 못했습니다.");
+            CancelTrapPlacement(true);
+            return;
+        }
+
+        trapPreview = Instantiate(prefab);
+        trapPreview.name = "TrapPreview";
+        StripTrapPreviewColliders(trapPreview);
+        FitTrapVisualScale(trapPreview);
+        trapPreviewRenderers = trapPreview.GetComponentsInChildren<Renderer>(true);
+        BuildTrapPreviewTintMaterials();
+        ApplyTrapPreviewTint(false);
+    }
+
+    void BuildTrapPreviewTintMaterials()
+    {
+        if (trapPreviewRenderers == null || trapPreviewRenderers.Length == 0)
+            return;
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+            shader = Shader.Find("Unlit/Color");
+        if (shader == null)
+            shader = Shader.Find("Sprites/Default");
+
+        trapPreviewMatValid = new Material[trapPreviewRenderers.Length];
+        trapPreviewMatInvalid = new Material[trapPreviewRenderers.Length];
+        for (int i = 0; i < trapPreviewRenderers.Length; i++)
+        {
+            Renderer r = trapPreviewRenderers[i];
+            if (r == null)
+                continue;
+
+            r.enabled = true;
+            r.forceRenderingOff = false;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            Material valid = new Material(shader);
+            valid.name = "TrapPreviewValid";
+            valid.color = TrapPreviewValid;
+            if (valid.HasProperty("_BaseColor"))
+                valid.SetColor("_BaseColor", TrapPreviewValid);
+
+            Material invalid = new Material(shader);
+            invalid.name = "TrapPreviewInvalid";
+            invalid.color = TrapPreviewInvalid;
+            if (invalid.HasProperty("_BaseColor"))
+                invalid.SetColor("_BaseColor", TrapPreviewInvalid);
+
+            trapPreviewMatValid[i] = valid;
+            trapPreviewMatInvalid[i] = invalid;
+        }
+    }
+
+    void ApplyTrapPreviewTint(bool valid)
+    {
+        if (trapPreviewRenderers == null)
+            return;
+
+        Material[] mats = valid ? trapPreviewMatValid : trapPreviewMatInvalid;
+        if (mats == null)
+            return;
+
+        for (int i = 0; i < trapPreviewRenderers.Length; i++)
+        {
+            Renderer r = trapPreviewRenderers[i];
+            if (r == null || i >= mats.Length || mats[i] == null)
+                continue;
+            r.sharedMaterial = mats[i];
+        }
+    }
+
+    static void FitTrapVisualScale(GameObject root)
+    {
+        if (root == null)
+            return;
+
+        root.transform.localScale = Vector3.one;
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0)
+            return;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null)
+                bounds.Encapsulate(renderers[i].bounds);
+        }
+
+        float width = Mathf.Max(bounds.size.x, bounds.size.z);
+        if (width < 0.001f)
+            width = 1f;
+
+        float scale = TrapTargetWidth / width;
+        root.transform.localScale = Vector3.one * scale;
+    }
+
+    static void SeatTrapOnGround(GameObject root, Vector3 groundPos)
+    {
+        if (root == null)
+            return;
+
+        // 피벗이 어디에 있든 렌더러 바닥면이 지면에 딱 붙도록 맞춤
+        root.transform.position = new Vector3(groundPos.x, groundPos.y, groundPos.z);
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0)
+            return;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null && renderers[i].enabled)
+                bounds.Encapsulate(renderers[i].bounds);
+        }
+
+        float lift = groundPos.y - bounds.min.y;
+        root.transform.position = new Vector3(groundPos.x, groundPos.y + lift, groundPos.z);
+    }
+
+    static float GetTrapWorldHeight(GameObject root)
+    {
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0)
+            return 0.35f;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+        {
+            if (renderers[i] != null && renderers[i].enabled)
+                bounds.Encapsulate(renderers[i].bounds);
+        }
+
+        return Mathf.Max(0.05f, bounds.size.y);
+    }
+
+    static Transform BuildTrapVisualRoot(GameObject root)
+    {
+        Transform existing = root.transform.Find("TrapVisual");
+        if (existing != null)
+            return existing;
+
+        GameObject visual = new GameObject("TrapVisual");
+        visual.transform.SetParent(root.transform, false);
+        visual.transform.localPosition = Vector3.zero;
+        visual.transform.localRotation = Quaternion.identity;
+        visual.transform.localScale = Vector3.one;
+
+        List<Transform> move = new List<Transform>();
+        for (int i = 0; i < root.transform.childCount; i++)
+        {
+            Transform child = root.transform.GetChild(i);
+            if (child == null || child == visual.transform)
+                continue;
+            if (child.name == "TrapCatchTrigger")
+                continue;
+            move.Add(child);
+        }
+
+        for (int i = 0; i < move.Count; i++)
+            move[i].SetParent(visual.transform, true);
+
+        // FBX가 루트에 MeshRenderer를 다는 경우 — 비주얼 자식으로 옮김
+        MeshFilter rootMesh = root.GetComponent<MeshFilter>();
+        MeshRenderer rootRenderer = root.GetComponent<MeshRenderer>();
+        if (rootMesh != null && rootRenderer != null)
+        {
+            GameObject meshGo = new GameObject("TrapMesh");
+            meshGo.transform.SetParent(visual.transform, false);
+            meshGo.transform.localPosition = Vector3.zero;
+            meshGo.transform.localRotation = Quaternion.identity;
+            meshGo.transform.localScale = Vector3.one;
+
+            MeshFilter newFilter = meshGo.AddComponent<MeshFilter>();
+            newFilter.sharedMesh = rootMesh.sharedMesh;
+
+            MeshRenderer newRenderer = meshGo.AddComponent<MeshRenderer>();
+            newRenderer.sharedMaterials = rootRenderer.sharedMaterials;
+            newRenderer.shadowCastingMode = rootRenderer.shadowCastingMode;
+            newRenderer.receiveShadows = rootRenderer.receiveShadows;
+
+            Object.Destroy(rootRenderer);
+            Object.Destroy(rootMesh);
+        }
+
+        return visual.transform;
+    }
+
+    static void EnsureTrapRenderersVisible(GameObject root)
+    {
+        if (root == null)
+            return;
+
+        Material trapMat = null;
+#if UNITY_EDITOR
+        trapMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(TrapMaterialPath);
+#endif
+        if (trapMat == null)
+            trapMat = Resources.Load<Material>("Trap");
+
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            Renderer r = renderers[i];
+            if (r == null)
+                continue;
+            r.enabled = true;
+            r.forceRenderingOff = false;
+            if (trapMat != null && (r.sharedMaterial == null || r.sharedMaterial.shader == null || r.sharedMaterial.shader.name == "Hidden/InternalErrorShader"))
+                r.sharedMaterial = trapMat;
+        }
+    }
+
+    GameObject LoadTrapPrefab()
+    {
+        if (trapPrefab != null)
+            return trapPrefab;
+#if UNITY_EDITOR
+        trapPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TrapModelPath);
+#endif
+        if (trapPrefab == null)
+            trapPrefab = Resources.Load<GameObject>("Trap");
+        return trapPrefab;
+    }
+
+    static void StripTrapPreviewColliders(GameObject root)
+    {
+        Collider[] cols = root.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < cols.Length; i++)
+        {
+            if (cols[i] != null)
+                cols[i].enabled = false;
+        }
+
+        Rigidbody[] bodies = root.GetComponentsInChildren<Rigidbody>(true);
+        for (int i = 0; i < bodies.Length; i++)
+        {
+            if (bodies[i] != null)
+                bodies[i].detectCollisions = false;
+        }
+
+        WinderTrap trap = root.GetComponent<WinderTrap>();
+        if (trap != null)
+            trap.enabled = false;
+    }
+
+    void UpdateTrapPreviewPose()
+    {
+        Camera cam = null;
+        if (cameraPivot != null)
+        {
+            cam = cameraPivot.GetComponent<Camera>();
+            if (cam == null)
+                cam = cameraPivot.GetComponentInChildren<Camera>();
+        }
+        if (cam == null)
+            cam = Camera.main;
+        if (cam == null || trapPreview == null)
+            return;
+
+        Ray ray = new Ray(cam.transform.position, cam.transform.forward);
+        Vector3 aimPoint = cam.transform.position + cam.transform.forward * 8f;
+        bool hitGround = Physics.Raycast(ray, out RaycastHit hit, 40f, ~0, QueryTriggerInteraction.Ignore);
+        if (hitGround)
+            aimPoint = hit.point;
+
+        trapPlaceValid = false;
+        trapPlacePos = aimPoint;
+        if (hitGround && hit.normal.y >= 0.35f)
+        {
+            trapPlacePos = hit.point;
+            if (!WinderTrap.IsPlacementBlocked(trapPlacePos))
+                trapPlaceValid = true;
+        }
+
+        trapPreview.transform.rotation = Quaternion.Euler(0f, transform.eulerAngles.y, 0f);
+        SeatTrapOnGround(trapPreview, trapPlacePos);
+        ApplyTrapPreviewTint(trapPlaceValid);
+    }
+
+    void PlaceTrapAtPreview()
+    {
+        if (WinderTrap.IsPlacementBlocked(trapPlacePos))
+            return;
+
+        GameObject prefab = LoadTrapPrefab();
+        if (prefab == null)
+            return;
+
+        GameObject placed = Instantiate(prefab, trapPlacePos, Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
+        placed.name = "WinderTrap";
+        FitTrapVisualScale(placed);
+        SeatTrapOnGround(placed, trapPlacePos);
+        EnsureTrapRenderersVisible(placed);
+        PreparePlacedTrap(placed);
+
+        CancelTrapPlacement(false);
+    }
+
+    static void PreparePlacedTrap(GameObject root)
+    {
+        // 모델 콜라이더는 끄고, 전용 가장자리 트리거만 사용
+        Collider[] cols = root.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < cols.Length; i++)
+        {
+            if (cols[i] != null)
+                cols[i].enabled = false;
+        }
+
+        float height = GetTrapWorldHeight(root);
+
+        Bounds bounds = new Bounds(root.transform.position, Vector3.one * 0.5f);
+        Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+        if (renderers.Length > 0)
+        {
+            bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                    bounds.Encapsulate(renderers[i].bounds);
+            }
+        }
+
+        GameObject triggerGo = new GameObject("TrapCatchTrigger");
+        triggerGo.transform.SetParent(root.transform, false);
+        triggerGo.transform.position = new Vector3(bounds.center.x, root.transform.position.y + 0.2f, bounds.center.z);
+        SphereCollider sphere = triggerGo.AddComponent<SphereCollider>();
+        sphere.isTrigger = true;
+        float worldRadius = Mathf.Max(0.55f, Mathf.Max(bounds.extents.x, bounds.extents.z) * 0.9f);
+        float lossy = Mathf.Max(0.01f, root.transform.lossyScale.x);
+        sphere.radius = worldRadius / lossy;
+        sphere.center = Vector3.zero;
+
+        Rigidbody rb = root.GetComponent<Rigidbody>();
+        if (rb == null)
+            rb = root.AddComponent<Rigidbody>();
+        rb.isKinematic = true;
+        rb.useGravity = false;
+        rb.detectCollisions = true;
+
+        WinderTrap trap = root.GetComponent<WinderTrap>();
+        if (trap == null)
+            trap = root.AddComponent<WinderTrap>();
+        trap.Arm(sphere, height);
+    }
+
+    bool IsWinderCameraActive()
+    {
+        if (cameraPivot == null)
+            return false;
+        Camera cam = cameraPivot.GetComponent<Camera>();
+        if (cam == null)
+            cam = cameraPivot.GetComponentInChildren<Camera>();
+        return cam != null && cam.enabled && cam.gameObject.activeInHierarchy;
     }
 
     void UseGoldClubAbility()
@@ -973,12 +1451,13 @@ public class WinderMove : MonoBehaviour
         if (!isGrounded)
             return;
 
-        Vector3 planar = PlanarVelocity();
+        Vector3 planar = PlayerUnstickUtil.SlideWishAgainstWalls(bodyCollider, transform, PlanarVelocity());
         if (planar.sqrMagnitude > 0.01f)
             StepOverLowSeam(planar);
 
         if (rb != null && !rb.isKinematic)
         {
+            PlayerUnstickUtil.Resolve(rb, bodyCollider, transform, planar);
             Vector3 velocity = rb.linearVelocity;
             velocity.x = planar.x;
             velocity.z = planar.z;

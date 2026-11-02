@@ -81,7 +81,8 @@ public class WinderAnimation : MonoBehaviour
             default:
                 if (!GameSettings.MenuOpen)
                 {
-                    Attack();
+                    if (move == null || !move.IsPlacingTrap)
+                        Attack();
                     HitTickToys();
                     Jump();
                 }

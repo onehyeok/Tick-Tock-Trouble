@@ -883,6 +883,7 @@ GameObject:
   - component: {fileID: 1188905394}
   - component: {fileID: 1188905393}
   - component: {fileID: 1188905392}
+  - component: {fileID: 1188905396}
   m_Layer: 6
   m_Name: Plane
   m_TagString: Untagged
@@ -984,6 +985,38 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1188905396
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1188905391}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a5ac11cc976e418e8d13136b07e1f52, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.AI.Navigation::Unity.AI.Navigation.NavMeshSurface
+  m_SerializedVersion: 0
+  m_AgentTypeID: 0
+  m_CollectObjects: 0
+  m_Size: {x: 10, y: 10, z: 10}
+  m_Center: {x: 0, y: 2, z: 0}
+  m_LayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_UseGeometry: 0
+  m_DefaultArea: 0
+  m_GenerateLinks: 0
+  m_IgnoreNavMeshAgent: 1
+  m_IgnoreNavMeshObstacle: 1
+  m_OverrideTileSize: 0
+  m_TileSize: 256
+  m_OverrideVoxelSize: 0
+  m_VoxelSize: 0.16666667
+  m_MinRegionArea: 2
+  m_NavMeshData: {fileID: 23800000, guid: 6d830f4148b91a34b8d167aa30306acc, type: 2}
+  m_BuildHeightMesh: 0
 --- !u!1 &1625110628
 GameObject:
   m_ObjectHideFlags: 0
@@ -1282,6 +1315,7 @@ MonoBehaviour:
   faintAbilityIcon: {fileID: 21300000, guid: 78f06957ebb0c2b439d819109d25a8a0, type: 3}
   duplicateAbilityIcon: {fileID: 21300000, guid: 32d79cc6be7abb241b0f2f2854846164, type: 3}
   oneHitAbilityIcon: {fileID: 21300000, guid: 1bd71f4141f041a41840725ef52c847f, type: 3}
+  trapAbilityIcon: {fileID: 0}
   zeroAbilityIcon: {fileID: 21300000, guid: a2f1a321f9f72f34180a50a3ca762f66, type: 3}
   countText: {fileID: 8200001106}
   roundText: {fileID: 8200001206}
@@ -1291,6 +1325,8 @@ MonoBehaviour:
   windFill: {fileID: 8200001633}
   abilityTimerRoot: {fileID: 8200001801}
   abilityTimerFill: {fileID: 8200001813}
+  abilityTimerBase: {fileID: 0}
+  timerIconSprite: {fileID: 0}
   abilityIconRoot: {fileID: 8200001501}
   abilityIcon: {fileID: 8200001523}
   abilityFallbackText: {fileID: 0}
@@ -2785,6 +2821,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Jephy
       objectReference: {fileID: 0}
+    - target: {fileID: 7330630477638988723, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -2869,7 +2909,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3554437336344300276, guid: 528d3109753d3324f91f154a9c1b6c16, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3823857894520622277, guid: 528d3109753d3324f91f154a9c1b6c16, type: 3}
       propertyPath: m_LocalPosition.x

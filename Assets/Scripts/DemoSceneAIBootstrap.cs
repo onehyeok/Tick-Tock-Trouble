@@ -318,6 +318,13 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             return false;
         }
 
+        // ?? ??? ?? ????? ?? ??
+        if (IsBodyOverlappingProp(ground))
+        {
+            reason = 3;
+            return false;
+        }
+
         float minSq = spacing * spacing;
         for (int i = 0; i < placed.Count; i++)
         {
@@ -440,7 +447,6 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         Vector3 feet = ground + Vector3.up * 0.2f;
         Vector3 chest = ground + Vector3.up * 1.1f;
 
-        // 머리 위: 건물/지붕만 실내로 판정 (전선·나무는 무시)
         if (Physics.Raycast(feet, Vector3.up, out RaycastHit upHit, clearHeadroom, ~0, QueryTriggerInteraction.Ignore))
         {
             if (IsBuildingObject(upHit.collider.transform))
@@ -459,6 +465,26 @@ public class DemoSceneAIBootstrap : MonoBehaviour
                 continue;
             if (IsBuildingObject(c.transform))
                 return true;
+        }
+
+        return false;
+    }
+
+    bool IsBodyOverlappingProp(Vector3 ground)
+    {
+        Vector3 chest = ground + Vector3.up * 0.95f;
+        Vector3 half = new Vector3(bodyRadius * 0.85f, 0.7f, bodyRadius * 0.85f);
+        Collider[] overlaps = Physics.OverlapBox(chest, half, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < overlaps.Length; i++)
+        {
+            Collider c = overlaps[i];
+            if (c == null || c.isTrigger)
+                continue;
+            if (c.gameObject.name.StartsWith("Wall_"))
+                continue;
+            if (AiGroundUtil.IsWalkableGround(c) || AiGroundUtil.IsLooseGround(c))
+                continue;
+            return true;
         }
 
         return false;

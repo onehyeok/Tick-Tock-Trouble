@@ -9,7 +9,8 @@ public class TickToyHud : MonoBehaviour
         Run,
         Faint,
         Duplicate,
-        OneHit
+        OneHit,
+        Trap
     }
 
     [Header("Status")]
@@ -27,6 +28,7 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Sprite faintAbilityIcon;
     [SerializeField] private Sprite duplicateAbilityIcon;
     [SerializeField] private Sprite oneHitAbilityIcon;
+    [SerializeField] private Sprite trapAbilityIcon;
     [SerializeField] private Sprite zeroAbilityIcon;
 
     [Header("UI")]
@@ -38,6 +40,8 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Image windFill;
     [SerializeField] private GameObject abilityTimerRoot;
     [SerializeField] private Image abilityTimerFill;
+    [SerializeField] private Image abilityTimerBase;
+    [SerializeField] private Sprite timerIconSprite;
     [SerializeField] private GameObject abilityIconRoot;
     [SerializeField] private Image abilityIcon;
     [SerializeField] private Text abilityFallbackText;
@@ -74,12 +78,120 @@ public class TickToyHud : MonoBehaviour
 
         ShowEmptyAbility();
         EnsureDamageFlashUi();
+        EnsureAbilityTimerVisual();
         HideAbilityTimer();
+        EnsureTrapAbilityIcon();
         if (hpText != null)
         {
             hpTextBaseScale = hpText.rectTransform.localScale;
             hpTextBaseColor = hpText.color;
         }
+    }
+
+    void EnsureAbilityTimerVisual()
+    {
+        Sprite timerSprite = LoadTimerIconSprite();
+        if (abilityTimerRoot == null)
+            return;
+
+        // SampleScene과 동일 크기/위치 유지 (DemoScene이 작게 저장된 경우 보정)
+        RectTransform timerRt = abilityTimerRoot.GetComponent<RectTransform>();
+        if (timerRt != null)
+        {
+            timerRt.anchorMin = new Vector2(0.5f, 0.5f);
+            timerRt.anchorMax = new Vector2(0.5f, 0.5f);
+            timerRt.pivot = new Vector2(0.5f, 0.5f);
+            timerRt.anchoredPosition = new Vector2(0f, 288f);
+            timerRt.sizeDelta = new Vector2(300f, 300f);
+            timerRt.localScale = Vector3.one;
+        }
+
+        // 아래: 밝은 Timer_Icon 전체 / 위: 같은 아이콘 어두운 Radial이 시계방향으로 덮음
+        if (abilityTimerBase == null)
+        {
+            Transform existing = abilityTimerRoot.transform.Find("TimerBase");
+            if (existing != null)
+                abilityTimerBase = existing.GetComponent<Image>();
+        }
+
+        if (abilityTimerBase == null)
+        {
+            GameObject baseGo = new GameObject("TimerBase", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            baseGo.transform.SetParent(abilityTimerRoot.transform, false);
+            RectTransform baseRt = baseGo.GetComponent<RectTransform>();
+            baseRt.anchorMin = Vector2.zero;
+            baseRt.anchorMax = Vector2.one;
+            baseRt.offsetMin = Vector2.zero;
+            baseRt.offsetMax = Vector2.zero;
+            abilityTimerBase = baseGo.GetComponent<Image>();
+            abilityTimerBase.raycastTarget = false;
+            baseGo.transform.SetAsFirstSibling();
+        }
+
+        if (abilityTimerFill == null)
+        {
+            Transform fill = abilityTimerRoot.transform.Find("TimerFill");
+            if (fill != null)
+                abilityTimerFill = fill.GetComponent<Image>();
+        }
+
+        if (abilityTimerFill == null)
+        {
+            GameObject fillGo = new GameObject("TimerFill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            fillGo.transform.SetParent(abilityTimerRoot.transform, false);
+            RectTransform fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            abilityTimerFill = fillGo.GetComponent<Image>();
+            abilityTimerFill.raycastTarget = false;
+        }
+
+        abilityTimerFill.transform.SetAsLastSibling();
+
+        if (timerSprite != null)
+        {
+            abilityTimerBase.sprite = timerSprite;
+            abilityTimerFill.sprite = timerSprite;
+        }
+
+        abilityTimerBase.type = Image.Type.Simple;
+        abilityTimerBase.preserveAspect = true;
+        abilityTimerBase.color = Color.white;
+
+        // 경과 구간만 시계방향(12시 시작)으로 어둡게
+        abilityTimerFill.type = Image.Type.Filled;
+        abilityTimerFill.fillMethod = Image.FillMethod.Radial360;
+        abilityTimerFill.fillOrigin = (int)Image.Origin360.Top;
+        abilityTimerFill.fillClockwise = true;
+        abilityTimerFill.preserveAspect = true;
+        abilityTimerFill.color = new Color(0.22f, 0.12f, 0.08f, 0.82f);
+        abilityTimerFill.fillAmount = 0f;
+    }
+
+    Sprite LoadTimerIconSprite()
+    {
+        if (timerIconSprite != null)
+            return timerIconSprite;
+#if UNITY_EDITOR
+        timerIconSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Images/Timer_Icon.png");
+#endif
+        if (timerIconSprite == null)
+            timerIconSprite = Resources.Load<Sprite>("Timer_Icon");
+        return timerIconSprite;
+    }
+
+    void EnsureTrapAbilityIcon()
+    {
+        if (trapAbilityIcon != null)
+            return;
+#if UNITY_EDITOR
+        trapAbilityIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
+            "Assets/Images/Ability/Winder/Ability_Trap_Icon.png");
+#endif
+        if (trapAbilityIcon == null)
+            trapAbilityIcon = Resources.Load<Sprite>("Ability/Ability_Trap_Icon");
     }
 
     void Update()
@@ -259,12 +371,26 @@ public class TickToyHud : MonoBehaviour
 
     void UpdateAbilityTestKeys()
     {
+        // 와인더가 조작 중이면 3은 Trap 전용(WinderMove)
+        bool winderActive = IsAnyEnabledWinder();
         if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
             GrantTestAbility(AbilityKind.Run);
         else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
             GrantTestAbility(AbilityKind.Faint);
-        else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
+        else if (!winderActive && (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)))
             GrantTestAbility(AbilityKind.Duplicate);
+    }
+
+    static bool IsAnyEnabledWinder()
+    {
+        WinderMove[] winders = FindObjectsByType<WinderMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < winders.Length; i++)
+        {
+            if (winders[i] != null && winders[i].enabled)
+                return true;
+        }
+
+        return false;
     }
 
     void GrantTestAbility(AbilityKind kind)
@@ -432,12 +558,14 @@ public class TickToyHud : MonoBehaviour
 
     void ShowAbilityTimer(float remaining01)
     {
+        EnsureAbilityTimerVisual();
         if (abilityTimerRoot == null || abilityTimerFill == null)
             return;
 
         abilityTimerRoot.SetActive(true);
-        // 남은 시간만큼만 보이고, 지나간 구간은 시계방향으로 사라짐
-        abilityTimerFill.fillAmount = Mathf.Clamp01(remaining01);
+        // 남은 비율 → 경과 비율. 시계방향으로 어두운 덮개가 늘어남
+        float elapsed01 = 1f - Mathf.Clamp01(remaining01);
+        abilityTimerFill.fillAmount = elapsed01;
     }
 
     bool IsAnyTickToyWinding()
@@ -480,10 +608,14 @@ public class TickToyHud : MonoBehaviour
             abilityKind = AbilityKind.Duplicate;
         else if (kind == 4)
             abilityKind = AbilityKind.OneHit;
+        else if (kind == 5)
+            abilityKind = AbilityKind.Trap;
         else
             abilityKind = AbilityKind.Run;
-        // 황금 몽둥이는 레벨 없음
-        abilityLevel = abilityKind == AbilityKind.OneHit ? 1 : Mathf.Clamp(level, 1, 3);
+        // 황금 몽둥이 / 덫은 레벨 없음
+        abilityLevel = (abilityKind == AbilityKind.OneHit || abilityKind == AbilityKind.Trap)
+            ? 1
+            : Mathf.Clamp(level, 1, 3);
         ShowAbility();
     }
 
@@ -583,6 +715,7 @@ public class TickToyHud : MonoBehaviour
 
     void ShowAbility()
     {
+        EnsureTrapAbilityIcon();
         Sprite sprite = runAbilityIcon;
         if (abilityKind == AbilityKind.Faint)
             sprite = faintAbilityIcon;
@@ -590,6 +723,8 @@ public class TickToyHud : MonoBehaviour
             sprite = duplicateAbilityIcon;
         else if (abilityKind == AbilityKind.OneHit)
             sprite = oneHitAbilityIcon;
+        else if (abilityKind == AbilityKind.Trap)
+            sprite = trapAbilityIcon;
 
         if (abilityIconRoot != null)
             abilityIconRoot.SetActive(true);
@@ -608,6 +743,8 @@ public class TickToyHud : MonoBehaviour
                 abilityFallbackText.text = "분신술";
             else if (abilityKind == AbilityKind.OneHit)
                 abilityFallbackText.text = "황금 몽둥이";
+            else if (abilityKind == AbilityKind.Trap)
+                abilityFallbackText.text = "덫";
             else
                 abilityFallbackText.text = "달리기";
             abilityFallbackText.gameObject.SetActive(sprite == null);
@@ -615,8 +752,8 @@ public class TickToyHud : MonoBehaviour
 
         if (levelText != null)
         {
-            // Brick 황금 몽둥이: 레벨 표시 없음
-            if (abilityKind == AbilityKind.OneHit)
+            // Brick 황금 몽둥이 / 덫: 레벨 표시 없음
+            if (abilityKind == AbilityKind.OneHit || abilityKind == AbilityKind.Trap)
             {
                 levelText.gameObject.SetActive(false);
             }

@@ -1,14 +1,15 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Animations;
 using UnityEngine.Events;
-using UnityEngine.Playables;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 
 public class TickToyAnimation : MonoBehaviour
 {
+    const string EmoteUpperLayerName = "Emote Upper Layer"; // Greeting only + AvatarMask
+    const string EmoteFullLayerName = "Emote Full Layer";   // Dance1/2 full body, no mask
+    const string GreetingPath = "Assets/Animations/Greeting.fbx";
     const string Dance1Path = "Assets/Animations/T_Dance_1/T_Dance_1/T_Dance_1.fbx";
     const string Dance2Path = "Assets/Animations/T_Dance_2/T_Dance_2/T_Dance_2.fbx";
 
@@ -23,12 +24,15 @@ public class TickToyAnimation : MonoBehaviour
     private Quaternion modelRestLocalRot = Quaternion.identity;
     private bool modelShifted;
     private bool ignoreWindUntilRelease;
-    private PlayableGraph danceGraph;
-    private bool isDancing;
-    private float danceEndTime;
+    private bool isEmoting;
+    private bool emoteKeepLocomotion; // Greeting만 true
+    private float emoteEndTime;
+    private int emoteUpperLayer = -1;
+    private int emoteFullLayer = -1;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 11f;
+    [SerializeField] private AnimationClip greetingClip;
     [SerializeField] private AnimationClip dance1Clip;
     [SerializeField] private AnimationClip dance2Clip;
 
@@ -41,6 +45,7 @@ public class TickToyAnimation : MonoBehaviour
         CacheSpineSprings();
         SetSpineSpringsActive(false);
         EnsureDanceClips();
+        CacheEmoteLayer();
 
         if (animator != null && animator.isHuman)
         {
@@ -53,12 +58,12 @@ public class TickToyAnimation : MonoBehaviour
 
     void OnDisable()
     {
-        StopDance();
+        StopEmote();
     }
 
     void OnDestroy()
     {
-        StopDance();
+        StopEmote();
     }
 
     void Update()
@@ -75,10 +80,10 @@ public class TickToyAnimation : MonoBehaviour
         switch (move.State)
         {
             case TickToyMove.TickToyState.Dead:
-                StopDance();
+                StopEmote();
                 return;
             case TickToyMove.TickToyState.Faint:
-                StopDance();
+                StopEmote();
                 animator.SetBool("IsWinding", false);
                 move.IsWinding = false;
                 SetSpineSpringsActive(false);
@@ -86,16 +91,19 @@ public class TickToyAnimation : MonoBehaviour
                 return;
         }
 
-        if (isDancing && Time.time >= danceEndTime)
-            StopDance();
+        if (isEmoting && Time.time >= emoteEndTime)
+            StopEmote();
 
-        // TickToy only: Z = T_Dance_1, X = T_Dance_2
+        // Z Greeting(상체 마스크) / X·C 풀바디 댄스(마스크 없음)
         if (Input.GetKeyDown(KeyCode.Z))
-            PlayDance(dance1Clip);
+            PlayEmote("Greeting", greetingClip, true);
         else if (Input.GetKeyDown(KeyCode.X))
-            PlayDance(dance2Clip);
+            PlayEmote("Dance1", dance1Clip, false);
+        else if (Input.GetKeyDown(KeyCode.C))
+            PlayEmote("Dance2", dance2Clip, false);
 
-        if (isDancing)
+        // 풀바디 댄스 중엔 점프/와인드 무시
+        if (isEmoting && !emoteKeepLocomotion)
             return;
 
         Jump();
@@ -417,19 +425,41 @@ public class TickToyAnimation : MonoBehaviour
 
     public void SetMove(bool isMove)
     {
-        if (isMove && isDancing)
-            StopDance();
+        // 풀바디 댄스 중 이동하면 댄스 종료. Greeting은 달리면서 유지
+        if (isMove && isEmoting && !emoteKeepLocomotion)
+            StopEmote();
 
-        if (isDancing)
+        if (isEmoting && !emoteKeepLocomotion)
             return;
 
         if (isMove)
             ApplyRunDirection(move.MoveInput);
+        else
+        {
+            animator.SetFloat("MoveX", 0f);
+            animator.SetFloat("MoveY", 0f);
+        }
+
         animator.SetInteger("State", isMove ? 1 : 0);
+    }
+
+    void CacheEmoteLayer()
+    {
+        if (animator == null)
+            return;
+
+        emoteUpperLayer = animator.GetLayerIndex(EmoteUpperLayerName);
+        emoteFullLayer = animator.GetLayerIndex(EmoteFullLayerName);
+        if (emoteUpperLayer >= 0)
+            animator.SetLayerWeight(emoteUpperLayer, 1f);
+        if (emoteFullLayer >= 0)
+            animator.SetLayerWeight(emoteFullLayer, 1f);
     }
 
     void EnsureDanceClips()
     {
+        if (greetingClip == null)
+            greetingClip = LoadFirstAnimationClip(GreetingPath);
         if (dance1Clip == null)
             dance1Clip = LoadFirstAnimationClip(Dance1Path);
         if (dance2Clip == null)
@@ -451,39 +481,69 @@ public class TickToyAnimation : MonoBehaviour
         return null;
     }
 
-    void PlayDance(AnimationClip clip)
+    void PlayEmote(string stateName, AnimationClip clip, bool upperBodyOnly)
     {
-        if (clip == null || animator == null || move == null)
+        if (animator == null || move == null)
             return;
         if (move.IsDead || move.IsFainted)
             return;
 
-        EnsureDanceClips();
-        if (clip == null)
+        CacheEmoteLayer();
+        int layer = upperBodyOnly ? emoteUpperLayer : emoteFullLayer;
+        if (layer < 0)
+        {
+            Debug.LogWarning("[TickToyAnimation] Emote Layer 없음. 메뉴 TickTock/Setup TickToy Emote Layer 실행 후 다시 플레이하세요.");
             return;
+        }
 
-        StopDance();
+        EnsureDanceClips();
+        StopEmote();
 
-        danceGraph = PlayableGraph.Create("TickToyDance");
-        danceGraph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
-        AnimationPlayableOutput output = AnimationPlayableOutput.Create(danceGraph, "Dance", animator);
-        AnimationClipPlayable playable = AnimationClipPlayable.Create(danceGraph, clip);
-        playable.SetDuration(clip.length);
-        output.SetSourcePlayable(playable);
-        danceGraph.Play();
+        // 다른 쪽 레이어는 Empty로
+        if (upperBodyOnly && emoteFullLayer >= 0)
+            animator.CrossFadeInFixedTime("Empty", 0.05f, emoteFullLayer, 0f);
+        if (!upperBodyOnly && emoteUpperLayer >= 0)
+            animator.CrossFadeInFixedTime("Empty", 0.05f, emoteUpperLayer, 0f);
 
-        isDancing = true;
-        danceEndTime = Time.time + Mathf.Max(0.1f, clip.length);
+        animator.SetLayerWeight(layer, 1f);
+        animator.ResetTrigger("Greeting");
+        animator.ResetTrigger("Dance1");
+        animator.ResetTrigger("Dance2");
+        animator.SetTrigger(stateName);
+        animator.CrossFadeInFixedTime(stateName, 0.1f, layer, 0f);
+
+        isEmoting = true;
+        emoteKeepLocomotion = upperBodyOnly;
+        float len = clip != null ? clip.length : 2f;
+        emoteEndTime = Time.time + Mathf.Max(0.2f, len);
         animator.SetBool("IsWinding", false);
         move.IsWinding = false;
         SetSpineSpringsActive(false);
     }
 
-    void StopDance()
+    void StopEmote()
     {
-        if (danceGraph.IsValid())
-            danceGraph.Destroy();
-        isDancing = false;
+        if (!isEmoting && emoteUpperLayer < 0 && emoteFullLayer < 0)
+        {
+            CacheEmoteLayer();
+        }
+
+        bool wasEmoting = isEmoting;
+        isEmoting = false;
+        emoteKeepLocomotion = false;
+        emoteEndTime = 0f;
+        if (animator == null)
+            return;
+
+        CacheEmoteLayer();
+        animator.ResetTrigger("Greeting");
+        animator.ResetTrigger("Dance1");
+        animator.ResetTrigger("Dance2");
+
+        if (emoteUpperLayer >= 0)
+            animator.CrossFadeInFixedTime("Empty", wasEmoting ? 0.15f : 0f, emoteUpperLayer, 0f);
+        if (emoteFullLayer >= 0)
+            animator.CrossFadeInFixedTime("Empty", wasEmoting ? 0.15f : 0f, emoteFullLayer, 0f);
     }
 
     void ApplyRunDirection(Vector2 input)

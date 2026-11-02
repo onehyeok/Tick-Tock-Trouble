@@ -26223,7 +26223,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1525350071716974406, guid: 85e93a26fe3df0140b7ffcb1e2c03012, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 6573371272821830060, guid: 85e93a26fe3df0140b7ffcb1e2c03012, type: 3}
       propertyPath: m_LocalPosition.z
@@ -133824,7 +133824,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7330630477638988723, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -276744,7 +276744,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4755280112324854220, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -420824,6 +420824,7 @@ MonoBehaviour:
   faintAbilityIcon: {fileID: 21300000, guid: 78f06957ebb0c2b439d819109d25a8a0, type: 3}
   duplicateAbilityIcon: {fileID: 21300000, guid: 32d79cc6be7abb241b0f2f2854846164, type: 3}
   oneHitAbilityIcon: {fileID: 21300000, guid: 1bd71f4141f041a41840725ef52c847f, type: 3}
+  trapAbilityIcon: {fileID: 21300000, guid: 0d83b2d0cb7e27d43bd7e152da90d6c9, type: 3}
   zeroAbilityIcon: {fileID: 21300000, guid: a2f1a321f9f72f34180a50a3ca762f66, type: 3}
   countText: {fileID: 8200001106}
   roundText: {fileID: 8200001206}
@@ -420833,6 +420834,8 @@ MonoBehaviour:
   windFill: {fileID: 8200001633}
   abilityTimerRoot: {fileID: 8200001801}
   abilityTimerFill: {fileID: 8200001813}
+  abilityTimerBase: {fileID: 0}
+  timerIconSprite: {fileID: 0}
   abilityIconRoot: {fileID: 8200001501}
   abilityIcon: {fileID: 8200001523}
   abilityFallbackText: {fileID: 0}
@@ -421404,7 +421407,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.4, y: 0.25}
   m_AnchorMax: {x: 0.9, y: 0.75}
-  m_AnchoredPosition: {x: 0, y: -11}
+  m_AnchoredPosition: {x: 0, y: -15}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &8200001406
@@ -422136,8 +422139,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 72}
-  m_SizeDelta: {x: 96, y: 96}
+  m_AnchoredPosition: {x: 0, y: 288}
+  m_SizeDelta: {x: 300, y: 300}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &8200001811
 GameObject:
