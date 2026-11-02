@@ -407,6 +407,12 @@ public class TickToyMove : MonoBehaviour
             return;
         }
 
+        if (GameSettings.MenuOpen)
+        {
+            MoveInput = Vector2.zero;
+            return;
+        }
+
         InputUpdate();
         if (PressedAbilityKey())
             UseGrantedAbility();
@@ -710,15 +716,19 @@ public class TickToyMove : MonoBehaviour
 
     void Look()
     {
+        if (GameSettings.MenuOpen)
+            return;
+
+        GameSettings.EnsureLoaded();
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
         if (PressedTurnAround())
             yaw += 180f;
 
-        yaw += mouseX * sensitivity * Time.deltaTime;
+        yaw += mouseX * GameSettings.HorizontalSensitivity * Time.deltaTime;
 
-        cameraPitch -= mouseY * sensitivity * Time.deltaTime;
+        cameraPitch -= mouseY * GameSettings.VerticalSensitivity * Time.deltaTime;
         cameraPitch = Mathf.Clamp(cameraPitch, MinCameraPitch, MaxCameraPitch);
     }
 

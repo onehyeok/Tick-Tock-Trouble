@@ -79,9 +79,12 @@ public class WinderAnimation : MonoBehaviour
                 SetFaint(true);
                 break;
             default:
-                Attack();
-                HitTickToys();
-                Jump();
+                if (!GameSettings.MenuOpen)
+                {
+                    Attack();
+                    HitTickToys();
+                    Jump();
+                }
                 break;
         }
 

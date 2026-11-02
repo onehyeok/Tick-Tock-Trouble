@@ -415,6 +415,12 @@ public class WinderMove : MonoBehaviour
             return;
         }
 
+        if (GameSettings.MenuOpen)
+        {
+            MoveInput = Vector2.zero;
+            return;
+        }
+
         InputUpdate();
         if (PressedAbilityKey())
             UseAbility();
@@ -1010,6 +1016,10 @@ public class WinderMove : MonoBehaviour
 
     void Look()
     {
+        if (GameSettings.MenuOpen)
+            return;
+
+        GameSettings.EnsureLoaded();
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
@@ -1021,9 +1031,9 @@ public class WinderMove : MonoBehaviour
                 rb.rotation = turned;
         }
 
-        transform.Rotate(Vector3.up * mouseX * sensitivity * Time.deltaTime);
+        transform.Rotate(Vector3.up * mouseX * GameSettings.HorizontalSensitivity * Time.deltaTime);
 
-        xRotation -= mouseY * sensitivity * Time.deltaTime;
+        xRotation -= mouseY * GameSettings.VerticalSensitivity * Time.deltaTime;
         xRotation = Mathf.Clamp(xRotation, -80f, 80f);
 
         cameraPivot.localRotation =
