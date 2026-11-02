@@ -19,7 +19,7 @@ public class WinderMove : MonoBehaviour
 
     private WinderAnimation animationController;
 
-    private float moveSpeed = 6f;
+    private float moveSpeed = 4.5f;
     [Tooltip("이 높이보다 낮은 턱은 점프 없이 걸어 올라갑니다. 단위는 미터입니다.")]
     [SerializeField] private float walkLipHeight = 0.45f;
     int physicsBodyId;
@@ -43,7 +43,7 @@ public class WinderMove : MonoBehaviour
     private bool holdReady;
     private bool aimLeft;
     private Rigidbody rb;
-    private float JumpPower = 5.5f;
+    private float JumpPower = 5f;
 
     private bool isGrounded = true;
     private bool leftGround;
@@ -61,8 +61,10 @@ public class WinderMove : MonoBehaviour
     private static readonly RaycastHit[] GroundHits = new RaycastHit[8];
     private bool isProne = false;
     private Collider bodyCollider;
-    private BoxCollider bodyBox;
-    private Vector3 standColliderSize;
+    private CapsuleCollider bodyCapsule;
+    private float standCapsuleHeight;
+    private float standCapsuleRadius;
+    private int standCapsuleDirection;
     private Vector3 standColliderCenter;
     private bool standColliderCached;
     private Transform spring;
@@ -152,7 +154,7 @@ public class WinderMove : MonoBehaviour
         if (State == WinderState.Dead)
             return;
 
-        State = WinderState.Dead;
+                State = WinderState.Dead;
         hp = 0;
 
         // 점프 중 사망 시 공중 고정 방지 — 바닥에 닿을 때까지 중력 유지
@@ -212,7 +214,9 @@ public class WinderMove : MonoBehaviour
     {
         animationController = GetComponent<WinderAnimation>();
         rb = GetComponent<Rigidbody>();
-        bodyCollider = GetComponent<Collider>();
+        bodyCollider = GetComponent<CapsuleCollider>();
+        if (bodyCollider == null)
+            bodyCollider = GetComponent<Collider>();
         if (rb != null)
             physicsBodyId = rb.GetInstanceID();
         if (bodyCollider != null)
@@ -1290,18 +1294,20 @@ public class WinderMove : MonoBehaviour
 
     void CacheStandCollider()
     {
-        bodyBox = bodyCollider as BoxCollider;
-        if (bodyBox == null)
+        bodyCapsule = bodyCollider as CapsuleCollider;
+        if (bodyCapsule == null)
             return;
 
-        standColliderSize = bodyBox.size;
-        standColliderCenter = bodyBox.center;
+        standCapsuleHeight = bodyCapsule.height;
+        standCapsuleRadius = bodyCapsule.radius;
+        standCapsuleDirection = bodyCapsule.direction;
+        standColliderCenter = bodyCapsule.center;
         standColliderCached = true;
     }
 
     public void FitProneCollider()
     {
-        if (!standColliderCached)
+        if (!standColliderCached || bodyCapsule == null)
             return;
 
         if (bodyAnimator == null)
@@ -1333,6 +1339,7 @@ public class WinderMove : MonoBehaviour
         EncapsulateBone(HumanBodyBones.Hips, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Spine, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Chest, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.Neck, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Head, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
         EncapsulateBone(HumanBodyBones.RightUpperArm, ref min, ref max);
@@ -1363,32 +1370,28 @@ public class WinderMove : MonoBehaviour
             Vector3 along = headLocal - hipsLocal;
             if (along.sqrMagnitude > 0.0001f)
             {
-                Vector3 snout = headLocal + along.normalized * 0.22f;
+                Vector3 snout = headLocal + along.normalized * 0.35f;
                 min = Vector3.Min(min, snout);
                 max = Vector3.Max(max, snout);
             }
-
-            Vector3 ears = headLocal + Vector3.up * 0.18f;
-            min = Vector3.Min(min, ears);
-            max = Vector3.Max(max, ears);
         }
 
-        min.x -= 0.18f;
-        max.x += 0.18f;
-        min.z -= 0.16f;
-        max.z += 0.16f;
-        min.y -= 0.06f;
-        max.y += 0.1f;
+        min.x -= 0.14f;
+        max.x += 0.14f;
+        min.z -= 0.14f;
+        max.z += 0.14f;
+        min.y -= 0.04f;
+        max.y += 0.08f;
 
         if (!downed)
         {
-            float standBottom = standColliderCenter.y - standColliderSize.y * 0.5f;
+            float standBottom = standColliderCenter.y - standCapsuleHeight * 0.5f;
             if (min.y < standBottom)
                 min.y = standBottom;
         }
 
         float height = max.y - min.y;
-        if (!downed && height > standColliderSize.y * 0.75f)
+        if (!downed && !isProne && height > standCapsuleHeight * 0.75f)
         {
             RestoreStandCollider();
             return;
@@ -1398,24 +1401,23 @@ public class WinderMove : MonoBehaviour
         size.x = Mathf.Max(size.x, 0.5f);
         size.y = Mathf.Max(size.y, downed ? 0.28f : 0.35f);
         size.z = Mathf.Max(size.z, 0.5f);
-        if (downed && size.y < 0.35f)
+        if (size.y < 0.35f)
         {
             float extra = 0.35f - size.y;
             size.y = 0.35f;
             max.y += extra;
         }
 
-        bodyBox.size = size;
-        bodyBox.center = (min + max) * 0.5f;
-    }
+        bool alongZ = size.z >= size.x;
+        float longLen = alongZ ? size.z : size.x;
+        float lateral = alongZ ? size.x : size.z;
+        float radius = Mathf.Max(Mathf.Max(lateral, size.y) * 0.5f, 0.18f);
+        float capsuleHeight = Mathf.Max(longLen, radius * 2f + 0.02f);
 
-    void RestoreStandCollider()
-    {
-        if (bodyBox.size == standColliderSize && bodyBox.center == standColliderCenter)
-            return;
-
-        bodyBox.size = standColliderSize;
-        bodyBox.center = standColliderCenter;
+        bodyCapsule.direction = alongZ ? 2 : 0;
+        bodyCapsule.height = capsuleHeight;
+        bodyCapsule.radius = radius;
+        bodyCapsule.center = (min + max) * 0.5f;
     }
 
     void EncapsulateBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
@@ -1427,6 +1429,23 @@ public class WinderMove : MonoBehaviour
         Vector3 local = transform.InverseTransformPoint(boneTransform.position);
         min = Vector3.Min(min, local);
         max = Vector3.Max(max, local);
+    }
+
+    void RestoreStandCollider()
+    {
+        if (bodyCapsule == null)
+            return;
+
+        if (bodyCapsule.height == standCapsuleHeight
+            && bodyCapsule.radius == standCapsuleRadius
+            && bodyCapsule.direction == standCapsuleDirection
+            && bodyCapsule.center == standColliderCenter)
+            return;
+
+        bodyCapsule.height = standCapsuleHeight;
+        bodyCapsule.radius = standCapsuleRadius;
+        bodyCapsule.direction = standCapsuleDirection;
+        bodyCapsule.center = standColliderCenter;
     }
 
     Vector3 PlanarVelocity()
@@ -1521,58 +1540,30 @@ public class WinderMove : MonoBehaviour
 
     public void Jump()
     {
+        // 공중·쿨다운 중이면 점프 불가
         if (rb == null || rb.isKinematic || !CanJump)
             return;
 
-        Vector3 planar = PlanarVelocity();
-        bool moving = planar.sqrMagnitude > 0.01f;
-        Vector3 dir = moving ? planar.normalized : FlatForward();
-        vaultDir = dir;
-
-        // 제자리(스페이스만) 점프는 수직만. 앞으로 밀어 넣거나 벽을 통과시키지 않음.
         ReleaseStep();
-        Collider step = null;
-        float topY;
-        if (moving && FindClimbableStep(dir, out step, out topY) && bodyCollider != null)
-        {
-            vaultTopY = topY;
-            stepIgnoreUntil = Time.time + 0.55f;
-            stepIgnored = step;
-            if (!ColliderSupportsFeet(step))
-            {
-                Physics.IgnoreCollision(bodyCollider, step, true);
-                vaultIgnoredCollision = true;
-            }
-            else
-                vaultWallPass = true;
-        }
-        else if (moving && TryWallNormalAhead(dir, out Vector3 wallN))
-        {
-            float into = Vector3.Dot(planar, -wallN);
-            if (into > 0f)
-                planar += wallN * into;
-        }
 
+        // 이동키로 만든 수평 속도. 없으면 제자리 수직 점프
+        Vector3 planar = PlanarVelocity();
+        if (planar.sqrMagnitude < 0.01f)
+            planar = Vector3.zero;
+
+        // 그 방향 그대로 점프 (장애물에 비비면 물리가 막음)
         Vector3 velocity = rb.linearVelocity;
         velocity.x = planar.x;
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
+
         jumpAscentY = JumpPower;
         isGrounded = false;
         leftGround = true;
         restTime = 0f;
         jumped = true;
         jumpLock = 0.12f;
-    }
-
-    Vector3 FlatForward()
-    {
-        Vector3 forward = transform.forward;
-        forward.y = 0f;
-        if (forward.sqrMagnitude < 0.0001f)
-            return Vector3.forward;
-        return forward.normalized;
     }
 
     void PreserveJumpAscent()
@@ -1590,43 +1581,12 @@ public class WinderMove : MonoBehaviour
                 jumpAscentY = 0f;
         }
 
-        if (stepIgnored == null && !vaultWallPass)
-        {
-            Vector3 planar = new Vector3(velocity.x, 0f, velocity.z);
-            if (planar.sqrMagnitude > 0.01f && TryWallNormalAhead(planar.normalized, out Vector3 wallN))
-            {
-                float into = Vector3.Dot(planar, -wallN);
-                if (into > 0f)
-                {
-                    planar += wallN * into;
-                    velocity.x = planar.x;
-                    velocity.z = planar.z;
-                }
-            }
-        }
-
         rb.linearVelocity = velocity;
     }
 
     void KeepStep()
     {
-        if (bodyCollider == null)
-            return;
-
-        bool vaulting = stepIgnored != null || vaultWallPass;
-        if (!vaulting)
-            return;
-
-        bool feetClear = bodyCollider.bounds.min.y >= vaultTopY - 0.05f;
-        bool falling = rb != null && rb.linearVelocity.y < -0.2f;
-        if (feetClear && vaultDir.sqrMagnitude > 0.01f && rb != null)
-        {
-            Vector3 p = rb.position;
-            p += vaultDir.normalized * 0.18f;
-            rb.position = p;
-        }
-
-        if (feetClear || falling || Time.time >= stepIgnoreUntil)
+        if (stepIgnored != null && Time.time >= stepIgnoreUntil)
             ReleaseStep();
     }
 
@@ -1780,7 +1740,7 @@ public class WinderMove : MonoBehaviour
         wish.y = 0f;
         bool canWalkStep = cachedCanStep && wish.sqrMagnitude > 0.0001f;
         if (canWalkStep)
-            wish.Normalize();
+        wish.Normalize();
 
         if (!wallPass && !canWalkStep)
             return;

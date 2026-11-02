@@ -14,8 +14,8 @@ public class TickToyAI : MonoBehaviour
         Jump
     }
 
-    [SerializeField] private float walkSpeed = 2.8f;
-    [SerializeField] private float runSpeed = 4.5f;
+    [SerializeField] private float walkSpeed = 3.5f;
+    [SerializeField] private float runSpeed = 7f;
     [SerializeField] private float idleMin = 1.5f;
     [SerializeField] private float idleMax = 4f;
     [SerializeField] private float runMin = 3f;
@@ -26,7 +26,7 @@ public class TickToyAI : MonoBehaviour
     [SerializeField] private int hp = 100;
 
     // TicktoyMove 의 JumpPower(5.5)와 동일 — TickToy 쪽은 수정하지 않음
-    const float TickToyJumpPower = 5.5f;
+    const float TickToyJumpPower = 5f;
 
     Rigidbody rb;
     Collider bodyCollider;
@@ -72,7 +72,9 @@ public class TickToyAI : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
-        bodyCollider = GetComponent<Collider>();
+        bodyCollider = GetComponent<CapsuleCollider>();
+        if (bodyCollider == null)
+            bodyCollider = GetComponent<Collider>();
         animator = GetComponentInChildren<Animator>();
         if (animator != null)
             animator.applyRootMotion = false;
@@ -584,18 +586,18 @@ public class TickToyAI : MonoBehaviour
 
     void GetBodyProbe(Vector3 worldPos, out Vector3 center, out Vector3 half)
     {
-        BoxCollider box = bodyCollider as BoxCollider;
-        if (box != null)
+        CapsuleCollider cap = bodyCollider as CapsuleCollider;
+        if (cap != null)
         {
-            Vector3 local = box.center + Vector3.up * 0.12f;
-            local.y += 0.05f;
-            center = worldPos + transform.rotation * Vector3.Scale(local, transform.lossyScale);
-            // ??? ?? ??? ? ??/?? ?? ?? ??
-            Vector3 size = Vector3.Scale(box.size, transform.lossyScale);
-            half = size * 0.5f;
-            half.x = Mathf.Max(0.12f, half.x * 0.75f);
-            half.y = Mathf.Max(0.35f, half.y * 0.55f);
-            half.z = Mathf.Max(0.12f, half.z * 0.75f);
+            Vector3 lossy = transform.lossyScale;
+            float radius = Mathf.Max(cap.radius * Mathf.Max(lossy.x, lossy.z), 0.12f);
+            float height = Mathf.Max(cap.height * lossy.y, radius * 2f);
+            half = new Vector3(
+                Mathf.Max(0.12f, radius * 0.75f),
+                Mathf.Max(0.35f, height * 0.5f * 0.55f),
+                Mathf.Max(0.12f, radius * 0.75f));
+            Vector3 local = cap.center + Vector3.up * 0.17f;
+            center = worldPos + transform.rotation * Vector3.Scale(local, lossy);
             center.y = worldPos.y + half.y + 0.08f;
             return;
         }
@@ -889,15 +891,20 @@ public class TickToyAI : MonoBehaviour
 
     void FitDeadCollider()
     {
-        BoxCollider box = bodyCollider as BoxCollider;
-        if (box == null || animator == null || !animator.isHuman)
+        CapsuleCollider cap = bodyCollider as CapsuleCollider;
+        if (cap == null || animator == null || !animator.isHuman)
+        {
+            if (bodyCollider != null)
+                bodyCollider.enabled = true;
             return;
+        }
 
         Vector3 min = Vector3.positiveInfinity;
         Vector3 max = Vector3.negativeInfinity;
         EncapsulateAiBone(HumanBodyBones.Hips, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.Spine, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.Chest, ref min, ref max);
+        EncapsulateAiBone(HumanBodyBones.Neck, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.Head, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.RightUpperArm, ref min, ref max);
@@ -908,18 +915,44 @@ public class TickToyAI : MonoBehaviour
         EncapsulateAiBone(HumanBodyBones.LeftFoot, ref min, ref max);
         EncapsulateAiBone(HumanBodyBones.RightFoot, ref min, ref max);
         if (float.IsPositiveInfinity(min.x))
+        {
+            cap.enabled = true;
             return;
+        }
 
-        min -= new Vector3(0.16f, 0.06f, 0.14f);
-        max += new Vector3(0.16f, 0.1f, 0.14f);
+        Transform head = animator.GetBoneTransform(HumanBodyBones.Head);
+        Transform hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+        if (head != null && hips != null)
+        {
+            Vector3 headLocal = transform.InverseTransformPoint(head.position);
+            Vector3 hipsLocal = transform.InverseTransformPoint(hips.position);
+            Vector3 along = headLocal - hipsLocal;
+            if (along.sqrMagnitude > 0.0001f)
+            {
+                Vector3 snout = headLocal + along.normalized * 0.35f;
+                min = Vector3.Min(min, snout);
+                max = Vector3.Max(max, snout);
+            }
+        }
+
+        min -= new Vector3(0.14f, 0.04f, 0.14f);
+        max += new Vector3(0.14f, 0.08f, 0.14f);
 
         Vector3 size = max - min;
         size.x = Mathf.Max(size.x, 0.5f);
         size.y = Mathf.Max(size.y, 0.35f);
         size.z = Mathf.Max(size.z, 0.5f);
-        box.size = size;
-        box.center = (min + max) * 0.5f;
-        box.enabled = true;
+
+        bool alongZ = size.z >= size.x;
+        float longLen = alongZ ? size.z : size.x;
+        float lateral = alongZ ? size.x : size.z;
+        float radius = Mathf.Max(Mathf.Max(lateral, size.y) * 0.5f, 0.18f);
+
+        cap.direction = alongZ ? 2 : 0;
+        cap.height = Mathf.Max(longLen, radius * 2f + 0.02f);
+        cap.radius = radius;
+        cap.center = (min + max) * 0.5f;
+        cap.enabled = true;
     }
 
     void EncapsulateAiBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)

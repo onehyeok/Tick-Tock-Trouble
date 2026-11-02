@@ -34,7 +34,7 @@ public class TickToyMove : MonoBehaviour
 
     private TickToyAnimation animationController;
 
-    [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float moveSpeed = 3.5f;
     [Tooltip("이 높이보다 낮은 턱은 점프 없이 걸어 올라갑니다. 단위는 미터입니다.")]
     [SerializeField] private float walkLipHeight = 0.45f;
     int physicsBodyId;
@@ -48,8 +48,10 @@ public class TickToyMove : MonoBehaviour
     private float cameraPitch;
     private Rigidbody rb;
     private Collider bodyCollider;
-    private BoxCollider bodyBox;
-    private Vector3 standColliderSize;
+    private CapsuleCollider bodyCapsule;
+    private float standCapsuleHeight;
+    private float standCapsuleRadius;
+    private int standCapsuleDirection;
     private Vector3 standColliderCenter;
     private bool standColliderCached;
     private Animator bodyAnimator;
@@ -59,7 +61,7 @@ public class TickToyMove : MonoBehaviour
     private float bodyHeight = 2.2f;
     private float focusHeight = 1.1f;
     private float yaw;
-    private float JumpPower = 5.5f;
+    private float JumpPower = 5f;
 
     private bool isGrounded = true;
     private bool leftGround;
@@ -255,7 +257,9 @@ public class TickToyMove : MonoBehaviour
     {
         animationController = GetComponent<TickToyAnimation>();
         rb = GetComponent<Rigidbody>();
-        bodyCollider = GetComponent<Collider>();
+        bodyCollider = GetComponent<CapsuleCollider>();
+        if (bodyCollider == null)
+            bodyCollider = GetComponent<Collider>();
         if (rb != null)
             physicsBodyId = rb.GetInstanceID();
         if (bodyCollider != null)
@@ -605,18 +609,20 @@ public class TickToyMove : MonoBehaviour
 
     void CacheStandCollider()
     {
-        bodyBox = bodyCollider as BoxCollider;
-        if (bodyBox == null)
+        bodyCapsule = bodyCollider as CapsuleCollider;
+        if (bodyCapsule == null)
             return;
 
-        standColliderSize = bodyBox.size;
-        standColliderCenter = bodyBox.center;
+        standCapsuleHeight = bodyCapsule.height;
+        standCapsuleRadius = bodyCapsule.radius;
+        standCapsuleDirection = bodyCapsule.direction;
+        standColliderCenter = bodyCapsule.center;
         standColliderCached = true;
     }
 
     public void FitProneCollider()
     {
-        if (!standColliderCached)
+        if (!standColliderCached || bodyCapsule == null)
             return;
 
         if (bodyAnimator == null)
@@ -648,6 +654,7 @@ public class TickToyMove : MonoBehaviour
         EncapsulateBone(HumanBodyBones.Hips, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Spine, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Chest, ref min, ref max);
+        EncapsulateBone(HumanBodyBones.Neck, ref min, ref max);
         EncapsulateBone(HumanBodyBones.Head, ref min, ref max);
         EncapsulateBone(HumanBodyBones.LeftUpperArm, ref min, ref max);
         EncapsulateBone(HumanBodyBones.RightUpperArm, ref min, ref max);
@@ -678,33 +685,28 @@ public class TickToyMove : MonoBehaviour
             Vector3 along = headLocal - hipsLocal;
             if (along.sqrMagnitude > 0.0001f)
             {
-                Vector3 snout = headLocal + along.normalized * 0.22f;
+                Vector3 snout = headLocal + along.normalized * 0.35f;
                 min = Vector3.Min(min, snout);
                 max = Vector3.Max(max, snout);
             }
-
-            Vector3 ears = headLocal + Vector3.up * 0.18f;
-            min = Vector3.Min(min, ears);
-            max = Vector3.Max(max, ears);
         }
 
-        min.x -= 0.18f;
-        max.x += 0.18f;
-        min.z -= 0.16f;
-        max.z += 0.16f;
-        min.y -= 0.06f;
-        max.y += 0.1f;
+        min.x -= 0.14f;
+        max.x += 0.14f;
+        min.z -= 0.14f;
+        max.z += 0.14f;
+        min.y -= 0.04f;
+        max.y += 0.08f;
 
-        // 서 있는 콜라이더 하단으로 강제하면 누운 박스와 안 맞음 — 다운드일 땐 스킵
         if (!downed)
         {
-            float standBottom = standColliderCenter.y - standColliderSize.y * 0.5f;
+            float standBottom = standColliderCenter.y - standCapsuleHeight * 0.5f;
             if (min.y < standBottom)
                 min.y = standBottom;
         }
 
         float height = max.y - min.y;
-        if (!downed && height > standColliderSize.y * 0.75f)
+        if (!downed && !isProne && height > standCapsuleHeight * 0.75f)
         {
             RestoreStandCollider();
             return;
@@ -714,25 +716,23 @@ public class TickToyMove : MonoBehaviour
         size.x = Mathf.Max(size.x, 0.5f);
         size.y = Mathf.Max(size.y, downed ? 0.28f : 0.35f);
         size.z = Mathf.Max(size.z, 0.5f);
-        // 너무 납작하면 바닥과 겹쳐 떨림 → 최소 두께 보장
-        if (downed && size.y < 0.35f)
+        if (size.y < 0.35f)
         {
             float extra = 0.35f - size.y;
             size.y = 0.35f;
             max.y += extra;
         }
 
-        bodyBox.size = size;
-        bodyBox.center = (min + max) * 0.5f;
-    }
+        bool alongZ = size.z >= size.x;
+        float longLen = alongZ ? size.z : size.x;
+        float lateral = alongZ ? size.x : size.z;
+        float radius = Mathf.Max(Mathf.Max(lateral, size.y) * 0.5f, 0.18f);
+        float capsuleHeight = Mathf.Max(longLen, radius * 2f + 0.02f);
 
-    void RestoreStandCollider()
-    {
-        if (bodyBox.size == standColliderSize && bodyBox.center == standColliderCenter)
-            return;
-
-        bodyBox.size = standColliderSize;
-        bodyBox.center = standColliderCenter;
+        bodyCapsule.direction = alongZ ? 2 : 0;
+        bodyCapsule.height = capsuleHeight;
+        bodyCapsule.radius = radius;
+        bodyCapsule.center = (min + max) * 0.5f;
     }
 
     void EncapsulateBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
@@ -744,6 +744,23 @@ public class TickToyMove : MonoBehaviour
         Vector3 local = transform.InverseTransformPoint(boneTransform.position);
         min = Vector3.Min(min, local);
         max = Vector3.Max(max, local);
+    }
+
+    void RestoreStandCollider()
+    {
+        if (bodyCapsule == null)
+            return;
+
+        if (bodyCapsule.height == standCapsuleHeight
+            && bodyCapsule.radius == standCapsuleRadius
+            && bodyCapsule.direction == standCapsuleDirection
+            && bodyCapsule.center == standColliderCenter)
+            return;
+
+        bodyCapsule.height = standCapsuleHeight;
+        bodyCapsule.radius = standCapsuleRadius;
+        bodyCapsule.direction = standCapsuleDirection;
+        bodyCapsule.center = standColliderCenter;
     }
 
     Vector3 PlanarVelocity(float speedScale)
@@ -1147,9 +1164,11 @@ public class TickToyMove : MonoBehaviour
         Collider bodyCol = clone.GetComponent<Collider>();
         if (bodyCol == null)
         {
-            BoxCollider box = clone.AddComponent<BoxCollider>();
-            box.size = new Vector3(0.8f, 1.6f, 0.8f);
-            box.center = new Vector3(0f, 0.8f, 0f);
+            CapsuleCollider cap = clone.AddComponent<CapsuleCollider>();
+            cap.height = 1.6f;
+            cap.radius = 0.4f;
+            cap.direction = 1;
+            cap.center = new Vector3(0f, 0.8f, 0f);
         }
         else
             bodyCol.enabled = true;
@@ -1471,45 +1490,26 @@ public class TickToyMove : MonoBehaviour
 
     public void Jump()
     {
+        // 공중·쿨다운 중이면 점프 불가
         if (rb == null || rb.isKinematic || !CanJump)
             return;
 
+        // 남아 있던 충돌무시 상태 정리
+        ReleaseStep();
+
+        // 이동키(WASD)로 만든 수평 속도. 키 없으면 0 → 제자리 수직 점프
         float speedScale = State == TickToyState.Run ? 2f : 1f;
         Vector3 planar = PlanarVelocity(speedScale);
-        bool moving = planar.sqrMagnitude > 0.01f;
-        Vector3 dir = moving ? planar.normalized : FlatForward();
-        vaultDir = dir;
+        if (planar.sqrMagnitude < 0.01f)
+            planar = Vector3.zero;
 
-        // 제자리(스페이스만) 점프는 수직만. 앞으로 밀어 넣거나 벽을 통과시키지 않음.
-        ReleaseStep();
-        Collider step = null;
-        float topY;
-        if (moving && FindClimbableStep(dir, out step, out topY) && bodyCollider != null)
-        {
-            vaultTopY = topY;
-            stepIgnoreUntil = Time.time + 0.55f;
-            stepIgnored = step;
-            if (!ColliderSupportsFeet(step))
-            {
-                Physics.IgnoreCollision(bodyCollider, step, true);
-                vaultIgnoredCollision = true;
-            }
-            else
-                vaultWallPass = true;
-        }
-        else if (moving && TryWallNormalAhead(dir, out Vector3 wallN))
-        {
-            // 높은 벽에 붙은 채 점프: 벽으로 파고드는 속도만 빼서 높이가 깎이지 않게
-            float into = Vector3.Dot(planar, -wallN);
-            if (into > 0f)
-                planar += wallN * into;
-        }
-
+        // 그 방향 그대로 점프 (담에 비비면 물리가 막음 — 충돌무시 없음)
         Vector3 velocity = rb.linearVelocity;
         velocity.x = planar.x;
         velocity.z = planar.z;
         velocity.y = JumpPower;
         rb.linearVelocity = velocity;
+
         jumpAscentY = JumpPower;
         isGrounded = false;
         leftGround = true;
@@ -1518,17 +1518,9 @@ public class TickToyMove : MonoBehaviour
         jumpLock = 0.12f;
     }
 
-    Vector3 FlatForward()
-    {
-        Vector3 forward = transform.forward;
-        forward.y = 0f;
-        if (forward.sqrMagnitude < 0.0001f)
-            return Vector3.forward;
-        return forward.normalized;
-    }
-
     void PreserveJumpAscent()
     {
+        // 상승 중 천장 등에 스쳐도 점프 곡선이 바로 죽지 않게 Y만 보정
         if (!jumped || rb == null || rb.isKinematic)
             return;
 
@@ -1542,43 +1534,13 @@ public class TickToyMove : MonoBehaviour
                 jumpAscentY = 0f;
         }
 
-        if (stepIgnored == null && !vaultWallPass)
-        {
-            Vector3 planar = new Vector3(velocity.x, 0f, velocity.z);
-            if (planar.sqrMagnitude > 0.01f && TryWallNormalAhead(planar.normalized, out Vector3 wallN))
-            {
-                float into = Vector3.Dot(planar, -wallN);
-                if (into > 0f)
-                {
-                    planar += wallN * into;
-                    velocity.x = planar.x;
-                    velocity.z = planar.z;
-                }
-            }
-        }
-
         rb.linearVelocity = velocity;
     }
 
     void KeepStep()
     {
-        if (bodyCollider == null)
-            return;
-
-        bool vaulting = stepIgnored != null || vaultWallPass;
-        if (!vaulting)
-            return;
-
-        bool feetClear = bodyCollider.bounds.min.y >= vaultTopY - 0.05f;
-        bool falling = rb != null && rb.linearVelocity.y < -0.2f;
-        if (feetClear && vaultDir.sqrMagnitude > 0.01f && rb != null)
-        {
-            Vector3 p = rb.position;
-            p += vaultDir.normalized * 0.18f;
-            rb.position = p;
-        }
-
-        if (feetClear || falling || Time.time >= stepIgnoreUntil)
+        // 점프 vault 제거됨 — 혹시 남은 ignore만 시간 지나면 해제
+        if (stepIgnored != null && Time.time >= stepIgnoreUntil)
             ReleaseStep();
     }
 

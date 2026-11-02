@@ -168,16 +168,18 @@ public static class PlayerUnstickUtil
 
     static void GetProbe(Collider body, Vector3 worldPos, Transform self, out Vector3 center, out Vector3 half)
     {
-        BoxCollider box = body as BoxCollider;
-        if (box != null)
+        CapsuleCollider cap = body as CapsuleCollider;
+        if (cap != null)
         {
-            Vector3 size = Vector3.Scale(box.size, self.lossyScale);
-            half = size * 0.5f;
+            Vector3 lossy = self.lossyScale;
+            float radius = Mathf.Max(cap.radius * Mathf.Max(lossy.x, lossy.z), 0.12f);
+            float height = Mathf.Max(cap.height * lossy.y, radius * 2f);
             // 발끝·머리 여유를 줄여 지면/모자 오탐 감소, 몸통 위주
-            half.x = Mathf.Max(0.12f, half.x * 0.82f);
-            half.y = Mathf.Max(0.35f, half.y * 0.62f);
-            half.z = Mathf.Max(0.12f, half.z * 0.82f);
-            center = worldPos + self.rotation * Vector3.Scale(box.center, self.lossyScale);
+            half = new Vector3(
+                Mathf.Max(0.12f, radius * 0.82f),
+                Mathf.Max(0.35f, height * 0.5f * 0.62f),
+                Mathf.Max(0.12f, radius * 0.82f));
+            center = worldPos + self.rotation * Vector3.Scale(cap.center, lossy);
             center.y = worldPos.y + half.y + 0.1f;
             return;
         }

@@ -555,9 +555,11 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         Collider body = instance.GetComponent<Collider>();
         if (body == null)
         {
-            BoxCollider box = instance.AddComponent<BoxCollider>();
-            box.size = new Vector3(0.8f, 1.6f, 0.8f);
-            box.center = new Vector3(0f, 0.8f, 0f);
+            CapsuleCollider cap = instance.AddComponent<CapsuleCollider>();
+            cap.height = 1.6f;
+            cap.radius = 0.4f;
+            cap.direction = 1;
+            cap.center = new Vector3(0f, 0.8f, 0f);
         }
 
         Physics.SyncTransforms();
