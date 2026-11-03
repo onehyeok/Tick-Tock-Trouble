@@ -34,6 +34,7 @@ Transform:
   m_LocalScale: {x: 0.57, y: 0.57, z: 0.57}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 178761541649762015}
   - {fileID: 4967126422238405309}
   - {fileID: 7626335298069336672}
   m_Father: {fileID: 0}
@@ -121,6 +122,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d7fa97645a888374c8f1aa55ef18ada2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyAnimation
+  danceFaceSwitchInterval: 0.45
   _OnJump:
     m_PersistentCalls:
       m_Calls:
@@ -137,6 +139,9 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   windLegSpread: 11
+  greetingClip: {fileID: 0}
+  dance1Clip: {fileID: 0}
+  dance2Clip: {fileID: 0}
 --- !u!114 &5285983240586007043
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -286,6 +291,84 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!1001 &428316754766487860
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 9102379075408961466}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.784122
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1.784122
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1.784122
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0.012268936
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.17137915
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.02485911
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_Name
+      value: Momo_Model2
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 8867dcf60a2f1c349aa555ac3682ea81, type: 2}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+--- !u!4 &178761541649762015 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: f5577af8cc81bdd4b81364c4828cbde8, type: 3}
+  m_PrefabInstance: {fileID: 428316754766487860}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &3843943145710175549
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -423,6 +506,10 @@ PrefabInstance:
     - target: {fileID: 919132149155446097, guid: 0b7e0f0b2f7ec6d41a982170d4474b91, type: 3}
       propertyPath: m_Name
       value: Momo
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 0b7e0f0b2f7ec6d41a982170d4474b91, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 0b7e0f0b2f7ec6d41a982170d4474b91, type: 3}
       propertyPath: m_Controller

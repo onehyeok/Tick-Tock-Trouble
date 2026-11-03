@@ -79,3 +79,9 @@ crashlytics-build.properties
 *.unity.bak*
 *.unity.tmp
 DemoScene.unity.bak*
+
+# Local debug / tools (do not push)
+_tools/
+_frames/
+_debug_clip.mp4
+*.mp4

@@ -265,6 +265,9 @@ public class TickToyMove : MonoBehaviour
         if (bodyCollider != null)
             bodyCollider.hasModifiableContacts = true;
         CacheStandCollider();
+        // 콜라이더 모양이 바뀔 때 바닥에서 튕겨나가는 속도 제한
+        if (rb != null)
+            rb.maxDepenetrationVelocity = 2f;
         EnsureTpsCamera();
         KeepOneAudioListener();
     }
@@ -628,6 +631,14 @@ public class TickToyMove : MonoBehaviour
         if (bodyAnimator == null)
             bodyAnimator = GetComponentInChildren<Animator>();
 
+        // 사망: 바닥에 정착하면 콜라이더 제거. (공중에서 떨어지는 동안만 착지용으로 유지)
+        if (State == TickToyState.Dead && deadSettled)
+        {
+            if (bodyCollider != null && bodyCollider.enabled)
+                bodyCollider.enabled = false;
+            return;
+        }
+
         bool downed = State == TickToyState.Dead || State == TickToyState.Faint;
         bool lying = isProne || downed;
         if (!lying && bodyAnimator != null)
@@ -700,9 +711,9 @@ public class TickToyMove : MonoBehaviour
 
         if (!downed)
         {
+            // 엎드린 캡슐 바닥 = 서있는 캡슐 바닥(지면). 전환 시 바닥 파고듦 → 튀어오름 방지
             float standBottom = standColliderCenter.y - standCapsuleHeight * 0.5f;
-            if (min.y < standBottom)
-                min.y = standBottom;
+            min.y = standBottom;
         }
 
         float height = max.y - min.y;
@@ -726,13 +737,16 @@ public class TickToyMove : MonoBehaviour
         bool alongZ = size.z >= size.x;
         float longLen = alongZ ? size.z : size.x;
         float lateral = alongZ ? size.x : size.z;
-        float radius = Mathf.Max(Mathf.Max(lateral, size.y) * 0.5f, 0.18f);
+        // 반지름은 '높이' 기준. (좌우폭 기준이면 넓은 캐릭터는 캡슐이 바닥 밑으로 파고들어 일어날 때 튀어오름)
+        float radius = Mathf.Clamp(size.y * 0.5f, 0.18f, Mathf.Max(lateral * 0.5f, 0.18f));
         float capsuleHeight = Mathf.Max(longLen, radius * 2f + 0.02f);
+        Vector3 center = (min + max) * 0.5f;
+        center.y = min.y + radius; // 캡슐 바닥을 min.y(지면)에 맞춤
 
         bodyCapsule.direction = alongZ ? 2 : 0;
         bodyCapsule.height = capsuleHeight;
         bodyCapsule.radius = radius;
-        bodyCapsule.center = (min + max) * 0.5f;
+        bodyCapsule.center = center;
     }
 
     void EncapsulateBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
@@ -1906,7 +1920,10 @@ public class TickToyMove : MonoBehaviour
     void UpdateMoveAnimation()
     {
         if (isProne)
+        {
+            animationController.SetProneMove(MoveInput.magnitude > 0.1f ? (Vector2)MoveInput : Vector2.zero);
             return;
+        }
 
         if (MoveInput.magnitude > 0.1f)
         {

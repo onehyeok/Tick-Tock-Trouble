@@ -23,6 +23,13 @@ public class TickToyAnimation : MonoBehaviour
     private Vector3 modelRestLocal;
     private Quaternion modelRestLocalRot = Quaternion.identity;
     private bool modelShifted;
+    private float contactPad = -1f;
+    // 표정: 모델 안의 "...Face_<이름>" 메쉬(Default/Happy/Surprised/Dizzy)를 켜고 끔
+    private readonly Dictionary<string, List<Renderer>> faces = new Dictionary<string, List<Renderer>>();
+    private string currentFace;
+    private string currentEmote;
+    private float emoteStartTime;
+    [SerializeField] private float danceFaceSwitchInterval = 0.45f; // 발목(발 뼈)~발바닥 높이. 뼈 위치를 바닥에 붙일 때 메쉬가 묻히지 않도록 띄우는 값
     private bool ignoreWindUntilRelease;
     private bool isEmoting;
     private bool emoteKeepLocomotion; // Greeting만 true
@@ -54,6 +61,52 @@ public class TickToyAnimation : MonoBehaviour
             leftLowerLeg = animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
             rightLowerLeg = animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
         }
+        CacheFaces();
+    }
+
+    void CacheFaces()
+    {
+        faces.Clear();
+        currentFace = null;
+        if (animator == null)
+            return;
+        foreach (var r in animator.GetComponentsInChildren<Renderer>(true))
+        {
+            int i = r.name.IndexOf("Face_", System.StringComparison.Ordinal);
+            if (i < 0)
+                continue;
+            string key = r.name.Substring(i + 5);
+            if (!faces.TryGetValue(key, out var list))
+                faces[key] = list = new List<Renderer>();
+            list.Add(r);
+        }
+        SetFace("Default");
+    }
+
+    void SetFace(string key)
+    {
+        if (faces.Count == 0 || key == currentFace)
+            return;
+        if (!faces.ContainsKey(key))
+            key = "Default";
+        foreach (var kv in faces)
+            foreach (var r in kv.Value)
+                if (r != null)
+                    r.enabled = kv.Key == key;
+        currentFace = key;
+    }
+
+    /// <summary>X·C 댄스 중: > < 와 o 표정을 번갈아, 기절한 척·사망: @@, 그 외: 기본 얼굴</summary>
+    void UpdateFace()
+    {
+        if (faces.Count == 0 || move == null)
+            return;
+        string want = "Default";
+        if (move.IsDead || move.IsFainted)
+            want = "Dizzy";
+        else if (isEmoting && (currentEmote == "Dance1" || currentEmote == "Dance2"))
+            want = ((int)((Time.time - emoteStartTime) / Mathf.Max(0.1f, danceFaceSwitchInterval)) % 2 == 0) ? "Happy" : "Surprised";
+        SetFace(want);
     }
 
     void OnDisable()
@@ -217,28 +270,26 @@ public class TickToyAnimation : MonoBehaviour
         if (animator == null)
             return;
 
+        UpdateFace();
+
         bool winding = leftUpperLeg != null && animator.GetBool("IsWinding");
         if (winding && !IsProne() && !move.IsDead && !move.IsFainted)
         {
-            SpreadLegsOnSpot();
+            // 와인딩: 휴머노이드 리타깃으로 몸 높이가 어긋나 발이 뜨는 것 방지 → 발을 바닥에 붙임
+            if (move.IsGrounded)
+            {
+                BeginModelShift();
+                PlantFeet(false);
+            }
+            else
+                RestoreModel();
             move.FitProneCollider();
             return;
         }
 
         if (ShouldPlantFeet())
         {
-            if (!modelShifted)
-            {
-                modelRestLocal = animator.transform.localPosition;
-                modelRestLocalRot = animator.transform.localRotation;
-                modelShifted = true;
-            }
-            else
-            {
-                // 매 프레임 보정 누적 방지 — 애니 기본 자세에서 다시 맞춤
-                animator.transform.localPosition = modelRestLocal;
-                animator.transform.localRotation = modelRestLocalRot;
-            }
+            BeginModelShift();
 
             bool downed = move.IsDead || move.IsFainted;
             if (downed)
@@ -252,6 +303,58 @@ public class TickToyAnimation : MonoBehaviour
 
         RestoreModel();
         move.FitProneCollider();
+    }
+
+    void BeginModelShift()
+    {
+        if (!modelShifted)
+        {
+            modelRestLocal = animator.transform.localPosition;
+            modelRestLocalRot = animator.transform.localRotation;
+            modelShifted = true;
+        }
+        else
+        {
+            // 매 프레임 보정 누적 방지 — 애니 기본 자세에서 다시 맞춤
+            animator.transform.localPosition = modelRestLocal;
+            animator.transform.localRotation = modelRestLocalRot;
+        }
+    }
+
+    /// <summary>바인드 포즈 기준 발 뼈 높이 - 메쉬 최저점(발바닥). 캐릭터마다 자동 계산.</summary>
+    float ContactPad()
+    {
+        if (contactPad >= 0f)
+            return contactPad;
+        contactPad = 0f;
+        Transform foot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        if (foot == null)
+            return contactPad;
+
+        foreach (var smr in animator.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            Mesh mesh = smr.sharedMesh;
+            if (mesh == null)
+                continue;
+            int idx = System.Array.IndexOf(smr.bones, foot);
+            Matrix4x4[] binds = mesh.bindposes;
+            if (idx < 0 || idx >= binds.Length)
+                continue;
+
+            Matrix4x4 toWorld = smr.transform.localToWorldMatrix;
+            Vector3 footW = toWorld.MultiplyPoint3x4(binds[idx].inverse.MultiplyPoint3x4(Vector3.zero));
+            Bounds b = mesh.bounds;
+            float minY = float.PositiveInfinity;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 c = b.center + Vector3.Scale(b.extents,
+                    new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                minY = Mathf.Min(minY, toWorld.MultiplyPoint3x4(c).y);
+            }
+            contactPad = Mathf.Clamp(footW.y - minY, 0f, 0.3f);
+            break;
+        }
+        return contactPad;
     }
 
     void RestoreModel()
@@ -389,7 +492,8 @@ public class TickToyAnimation : MonoBehaviour
             return;
 
         // 틱토이 Die 메시는 본보다 두꺼워 바닥에 파묻힘 → 살짝 띄움
-        float pad = downed ? 0.14f : 0f;
+        // 뼈(발목·손목)는 메쉬 한가운데라 그대로 바닥에 붙이면 손발이 반쯤 묻힘 → 발목 높이만큼 띄움
+        float pad = downed ? 0.14f : ContactPad();
         float gap = contactY - (groundY + pad);
         float maxGap = downed ? 2.5f : 1.2f;
         if (Mathf.Abs(gap) <= 0.015f || Mathf.Abs(gap) > maxGap)
@@ -513,6 +617,8 @@ public class TickToyAnimation : MonoBehaviour
         animator.CrossFadeInFixedTime(stateName, 0.1f, layer, 0f);
 
         isEmoting = true;
+        currentEmote = stateName;
+        emoteStartTime = Time.time;
         emoteKeepLocomotion = upperBodyOnly;
         float len = clip != null ? clip.length : 2f;
         emoteEndTime = Time.time + Mathf.Max(0.2f, len);
@@ -530,6 +636,7 @@ public class TickToyAnimation : MonoBehaviour
 
         bool wasEmoting = isEmoting;
         isEmoting = false;
+        currentEmote = null;
         emoteKeepLocomotion = false;
         emoteEndTime = 0f;
         if (animator == null)
@@ -551,16 +658,16 @@ public class TickToyAnimation : MonoBehaviour
         if (input.sqrMagnitude > 1f)
             input.Normalize();
 
-        // Backward 클립 미사용: 이동은 그대로, 애니만 전/좌/우 런
-        // S → Forward Run / AS → Left Run / DS → Right Run
-        if (input.y < -0.01f)
-        {
-            if (Mathf.Abs(input.x) >= 0.05f)
-                input = new Vector2(-Mathf.Sign(input.x), 0f); // AS/DS 좌우 반전
-            else
-                input = new Vector2(0f, 1f);
-        }
+        // RunBlend(2D): W=Run, S=RunBack, A=RunLeft, D=RunRight, 대각선은 자동 블렌드
+        animator.SetFloat("MoveX", input.x);
+        animator.SetFloat("MoveY", input.y);
+    }
 
+    // 엎드린 상태 이동 방향 (ProneBlend용)
+    public void SetProneMove(Vector2 input)
+    {
+        if (input.sqrMagnitude > 1f)
+            input.Normalize();
         animator.SetFloat("MoveX", input.x);
         animator.SetFloat("MoveY", input.y);
     }
