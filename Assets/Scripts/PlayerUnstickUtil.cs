@@ -50,7 +50,10 @@ public static class PlayerUnstickUtil
                 flat.y = 0f;
                 if (flat.sqrMagnitude < 0.01f)
                 {
-                    Vector3 away = center - other.ClosestPoint(center);
+                    // ClosestPoint는 볼록하지 않은 메쉬(길·건물)에서 쓰면 경고 폭주 → 그땐 바운즈 기준
+                    bool supported = !(other is MeshCollider mc) || mc.convex;
+                    Vector3 near = supported ? other.ClosestPoint(center) : other.bounds.ClosestPoint(center);
+                    Vector3 away = center - near;
                     away.y = 0f;
                     flat = away;
                 }

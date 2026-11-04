@@ -14,8 +14,8 @@ public class TickToyAI : MonoBehaviour
         Jump
     }
 
-    [SerializeField] private float walkSpeed = 3.5f;
-    [SerializeField] private float runSpeed = 7f;
+    [SerializeField] private float walkSpeed = 3f;
+    [SerializeField] private float runSpeed = 6f;
     [SerializeField] private float idleMin = 1.5f;
     [SerializeField] private float idleMax = 4f;
     [SerializeField] private float runMin = 3f;
@@ -54,6 +54,30 @@ public class TickToyAI : MonoBehaviour
     float stuckTimer;
     Vector3 lastProgressPos;
     static readonly Collider[] OverlapBuf = new Collider[24];
+
+    // 한 물리 스텝 동안 위치를 한 번만 옮기기 위한 누적 위치 (여러 번 MovePosition → 서로 덮어써서 튀던 문제 방지)
+    bool inStep;
+    Vector3 stepPos;
+    const float MaxPushPerStep = 0.08f;   // 겹침 밀어내기 한 스텝 최대 (순간이동 방지)
+    const float MaxGroundStepY = 0.4f;    // 바닥 높이 한 스텝 최대 변화
+
+    static TickToyMove[] cachedPlayers = new TickToyMove[0];
+    static float playersCachedAt = -10f;
+
+    Vector3 CurPos => inStep ? stepPos : (rb != null ? rb.position : transform.position);
+
+    void SetPos(Vector3 p)
+    {
+        if (inStep)
+        {
+            stepPos = p;
+            return;
+        }
+        if (rb != null)
+            rb.MovePosition(p);
+        else
+            transform.position = p;
+    }
 
     public int Hp => hp;
     public bool IsDead => dead;
@@ -191,6 +215,16 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
+        inStep = true;
+        stepPos = rb.position;
+        StepMove();
+        inStep = false;
+        if ((stepPos - rb.position).sqrMagnitude > 0.0000001f)
+            rb.MovePosition(stepPos);
+    }
+
+    void StepMove()
+    {
         SeparateFromPlayersOnly();
 
         if (jumpInAir)
@@ -228,7 +262,7 @@ public class TickToyAI : MonoBehaviour
 
         rb.MoveRotation(Quaternion.LookRotation(moveDir, Vector3.up));
 
-        Vector3 next = rb.position + moveDir * (currentSpeed * Time.fixedDeltaTime);
+        Vector3 next = CurPos + moveDir * (currentSpeed * Time.fixedDeltaTime);
         next.y = lockedGroundY;
         if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(next, lockedGroundY, out Vector3 g))
         {
@@ -248,7 +282,7 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
-        rb.MovePosition(next);
+        SetPos(next);
         SetAnimMove(new Vector2(0f, 1f), false);
         TrackProgress(next);
     }
@@ -262,14 +296,14 @@ public class TickToyAI : MonoBehaviour
         // 최고점 = JumpPower^2 / (2g)
         float height = 4f * jumpPeakHeight * t * (1f - t);
 
-        Vector3 p = rb.position;
+        Vector3 p = CurPos;
         p.y = lockedGroundY + height;
-        rb.MovePosition(p);
+        SetPos(p);
 
         if (t >= 1f)
         {
             p.y = lockedGroundY;
-            rb.MovePosition(p);
+            SetPos(p);
             jumpInAir = false;
             jumpTimer = jumpInterval;
         }
@@ -284,12 +318,16 @@ public class TickToyAI : MonoBehaviour
 
     void StickYToGround()
     {
-        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(rb.position, lockedGroundY != 0f ? lockedGroundY : rb.position.y, out Vector3 g))
+        Vector3 p = CurPos;
+        if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(p, lockedGroundY != 0f ? lockedGroundY : p.y, out Vector3 g))
         {
-            lockedGroundY = g.y;
-            Vector3 p = rb.position;
+            // 지붕·다른 물체 위로 갑자기 붙어 사라지는 것 방지: 한 스텝에 조금씩만
+            float dy = Mathf.Clamp(g.y - lockedGroundY, -MaxGroundStepY, MaxGroundStepY);
+            if (lockedGroundY == 0f)
+                dy = g.y;
+            lockedGroundY += dy;
             p.y = lockedGroundY;
-            rb.position = p;
+            SetPos(p);
         }
     }
 
@@ -298,7 +336,13 @@ public class TickToyAI : MonoBehaviour
         if (bodyCollider == null)
             return;
 
-        TickToyMove[] players = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        // 매 물리 스텝·AI마다 씬 전체 검색하던 것 → 0.5초마다 한 번만 (AI 40마리 렉 원인)
+        if (Time.time - playersCachedAt > 0.5f)
+        {
+            cachedPlayers = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            playersCachedAt = Time.time;
+        }
+        TickToyMove[] players = cachedPlayers;
         for (int i = 0; i < players.Length; i++)
         {
             TickToyMove player = players[i];
@@ -318,10 +362,10 @@ public class TickToyAI : MonoBehaviour
                 if (direction.sqrMagnitude < 0.0001f)
                     continue;
                 direction.Normalize();
-                Vector3 separated = rb.position + direction * (distance + 0.01f);
+                Vector3 separated = CurPos + direction * Mathf.Min(distance + 0.01f, MaxPushPerStep);
                 if (!jumpInAir)
                     separated.y = lockedGroundY;
-                rb.MovePosition(separated);
+                SetPos(separated);
             }
         }
     }
@@ -490,7 +534,7 @@ public class TickToyAI : MonoBehaviour
     {
         stuckTimer = 0f;
         ResolveWorldPenetration();
-        NudgeToClearSpot();
+        // 예전: 0.6~1.6m 옆으로 순간이동(NudgeToClearSpot) → 이제 방향만 바꿔서 걸어서 빠져나감
         PickClearMoveDir();
         if (currentSpeed < walkSpeed)
             currentSpeed = walkSpeed;
@@ -527,7 +571,7 @@ public class TickToyAI : MonoBehaviour
         if (bodyCollider == null || rb == null)
             return;
 
-        Vector3 pos = rb.position;
+        Vector3 pos = CurPos;
         GetBodyProbe(pos, out Vector3 center, out Vector3 half);
 
         int count = Physics.OverlapBoxNonAlloc(
@@ -569,8 +613,9 @@ public class TickToyAI : MonoBehaviour
         if (push.sqrMagnitude < 0.00001f)
             return;
 
-        if (push.sqrMagnitude > 1.5f * 1.5f)
-            push = push.normalized * 1.5f;
+        // 한 번에 크게 밀면 순간이동처럼 보임 → 스텝마다 조금씩
+        if (push.sqrMagnitude > MaxPushPerStep * MaxPushPerStep)
+            push = push.normalized * MaxPushPerStep;
 
         Vector3 freed = pos + push;
         freed.y = lockedGroundY;
@@ -580,7 +625,7 @@ public class TickToyAI : MonoBehaviour
             freed.y = lockedGroundY;
         }
 
-        rb.MovePosition(freed);
+        SetPos(freed);
         lastProgressPos = freed;
     }
 
@@ -635,18 +680,18 @@ public class TickToyAI : MonoBehaviour
             if (other.GetComponentInParent<TickToyMove>() != null)
                 continue;
 
-            Vector3 closest = other.ClosestPoint(center);
-            Vector3 to = center - closest;
-            to.y = 0f;
-            // ??? ??(?? ??)? ??
-            float vertical = Mathf.Abs(center.y - closest.y);
-            if (to.sqrMagnitude < 0.0004f && vertical > half.y * 0.4f)
+            // ClosestPoint는 볼록하지 않은 메쉬 콜라이더(건물·길)에서 안 됨 → 경고 폭주 + 항상 '겹침'으로 오판해 순간이동 유발
+            // ComputePenetration은 모든 콜라이더에서 동작
+            if (!Physics.ComputePenetration(
+                    bodyCollider, worldPos, transform.rotation,
+                    other, other.transform.position, other.transform.rotation,
+                    out Vector3 dir, out float dist))
                 continue;
-            if (to.sqrMagnitude < 0.0004f)
-                return true;
 
-            // ???? ??? ??? ??? ??
-            if (to.magnitude < Mathf.Max(half.x, half.z) * 0.55f)
+            // 바닥(위로 밀어내는 면)은 겹침 아님
+            if (dir.y > 0.65f)
+                continue;
+            if (dist > 0.03f)
                 return true;
         }
 

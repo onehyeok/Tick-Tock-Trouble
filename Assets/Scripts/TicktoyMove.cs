@@ -20,7 +20,7 @@ public class TickToyMove : MonoBehaviour
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
     [Tooltip("뒤로 빠지는 거리. 크면 멀어지고, 캐릭터가 안 보이면 줄이세요.")]
-    [SerializeField] private float cameraDistance = 0.95f;
+    [SerializeField] private float cameraDistance = 1.15f;
     [Tooltip("카메라 높이. 크면 위에서 내려다봅니다.")]
     [SerializeField] private float cameraHeight = 0.3f;
     [Tooltip("앞을 보는 정도. 크면 캐릭터가 화면 위로 밀려납니다.")]
@@ -34,7 +34,7 @@ public class TickToyMove : MonoBehaviour
 
     private TickToyAnimation animationController;
 
-    [SerializeField] private float moveSpeed = 3.5f;
+    [SerializeField] private float moveSpeed = 3f; // 걷기 3, 달리기 ×2 = 6
     [Tooltip("이 높이보다 낮은 턱은 점프 없이 걸어 올라갑니다. 단위는 미터입니다.")]
     [SerializeField] private float walkLipHeight = 0.45f;
     int physicsBodyId;
@@ -161,6 +161,7 @@ public class TickToyMove : MonoBehaviour
     }
 
     public bool IsFainted => State == TickToyState.Faint;
+    public int Hp => hp;
     public bool FaintCancelled { get; private set; }
     public bool IsUsingAbility =>
         State == TickToyState.Run || State == TickToyState.Faint

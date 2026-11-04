@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -51,6 +52,10 @@ public static class AiGroundUtil
             if (hit.collider == null)
                 continue;
             if (hit.normal.y < 0.45f)
+                continue;
+
+            // 캐릭터(리지드바디 달린 것)는 바닥 아님 — 다른 AI 머리 위나 자기 몸 위로 올라타 사라지던 문제
+            if (hit.collider.attachedRigidbody != null)
                 continue;
 
             // TileEdgeBarrier 같은 벽은 바닥 아님
@@ -107,11 +112,24 @@ public static class AiGroundUtil
         return TryFindGround(hint, preferredY, out ground);
     }
 
+    // 콜라이더별 판정 캐시 (매번 이름 경로 문자열을 만들던 비용 제거)
+    static readonly Dictionary<int, bool> WalkableCache = new Dictionary<int, bool>();
+    static readonly Dictionary<int, bool> LooseCache = new Dictionary<int, bool>();
+
     public static bool IsWalkableGround(Collider col)
     {
         if (col == null)
             return false;
+        int id = col.GetInstanceID();
+        if (WalkableCache.TryGetValue(id, out bool cached))
+            return cached;
+        bool result = IsWalkableGroundUncached(col);
+        WalkableCache[id] = result;
+        return result;
+    }
 
+    static bool IsWalkableGroundUncached(Collider col)
+    {
         string path = GetPathName(col.transform).ToLowerInvariant();
         for (int i = 0; i < RejectHints.Length; i++)
         {
@@ -133,7 +151,16 @@ public static class AiGroundUtil
     {
         if (col == null)
             return false;
-        if (col.gameObject.name.StartsWith("Wall_"))
+        int id = col.GetInstanceID();
+        if (LooseCache.TryGetValue(id, out bool cached))
+            return cached;
+        bool result = IsLooseGroundUncached(col);
+        LooseCache[id] = result;
+        return result;
+    }
+
+    static bool IsLooseGroundUncached(Collider col)
+    {        if (col.gameObject.name.StartsWith("Wall_"))
             return false;
 
         string path = GetPathName(col.transform).ToLowerInvariant();

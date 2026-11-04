@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 14ab3481de76da048bb4018ddd5932e6, type: 3}
+  m_Name: MatchPrefabs
+  m_EditorClassIdentifier: Assembly-CSharp::MatchPrefabs
+  winderPrefab: {fileID: 1525350071716974406, guid: 85e93a26fe3df0140b7ffcb1e2c03012, type: 3}
+  tickToyPrefabs:
+  - {fileID: 3554437336344300276, guid: 528d3109753d3324f91f154a9c1b6c16, type: 3}
+  - {fileID: 2292576379444011657, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
+  - {fileID: 7330630477638988723, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
+  - {fileID: 4755280112324854220, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
+  winderStartRoom: {fileID: 3232005819949802423, guid: 557ebd6a643458f458807592863e48b2, type: 3}

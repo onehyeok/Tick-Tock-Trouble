@@ -18,6 +18,11 @@ public class WinderAnimation : MonoBehaviour
 
     [SerializeField] private UnityEvent _OnJump;
 
+    [Header("공격 판정 구간 (공격 애니메이션 진행률 0~1)")]
+    [Tooltip("이 구간에서만 데미지 — 내려치는 순간만. 휘두른 뒤 돌아가는 동작에서는 데미지 없음")]
+    [SerializeField] private float hitWindowStart = 0.12f;
+    [SerializeField] private float hitWindowEnd = 0.45f;
+
     void Awake()
     {
         animator = GetComponentInChildren<Animator>();
@@ -191,6 +196,21 @@ public class WinderAnimation : MonoBehaviour
         return animator.GetCurrentAnimatorStateInfo(layer).IsName(AttackStateName) || animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0");
     }
 
+    /// <summary>공격 상태이면서 내려치는 구간일 때만 true (돌아가는 동작 제외)</summary>
+    bool IsInHitWindow()
+    {
+        int layer = animator.GetLayerIndex("Attack Layer");
+        if (layer < 0)
+            return false;
+
+        AnimatorStateInfo cur = animator.GetCurrentAnimatorStateInfo(layer);
+        if (!cur.IsName(AttackStateName) && !cur.IsName("Attack 0"))
+            return false;
+
+        float t = cur.normalizedTime;
+        return t >= hitWindowStart && t <= hitWindowEnd;
+    }
+
     void HitTickToys()
     {
         if (!IsSwinging())
@@ -198,6 +218,9 @@ public class WinderAnimation : MonoBehaviour
             hitThisSwing.Clear();
             return;
         }
+
+        if (!IsInHitWindow())
+            return;
 
         if (hitPoint == null)
             CacheHitPoint();
@@ -224,7 +247,7 @@ public class WinderAnimation : MonoBehaviour
 
     void OnTriggerEnter(Collider other)
     {
-        if (!IsSwinging() || other == null)
+        if (!IsInHitWindow() || other == null)
             return;
 
         TryHitTarget(other);

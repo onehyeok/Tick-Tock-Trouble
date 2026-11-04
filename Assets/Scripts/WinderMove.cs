@@ -20,7 +20,7 @@ public class WinderMove : MonoBehaviour
 
     private WinderAnimation animationController;
 
-    private float moveSpeed = 4.5f;
+    private float moveSpeed = 4f; // 걷기 4, 달리기 능력 ×2 = 8
     [Tooltip("이 높이보다 낮은 턱은 점프 없이 걸어 올라갑니다. 단위는 미터입니다.")]
     [SerializeField] private float walkLipHeight = 0.45f;
     int physicsBodyId;

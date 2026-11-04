@@ -100,11 +100,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TickToyMove
   cameraPivot: {fileID: 2841506639964948049}
-  cameraDistance: 0.95
+  cameraDistance: 1.15
   cameraHeight: 0.3
   cameraLookAhead: 0.2
   cameraStartPitch: 12
-  moveSpeed: 5
+  moveSpeed: 3
   walkLipHeight: 0.45
   proneMoveSpeedMultiplier: 0.5
   sensitivity: 200
