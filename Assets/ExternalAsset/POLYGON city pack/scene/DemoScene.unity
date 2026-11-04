@@ -112246,6 +112246,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 662246849989139557, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
+      propertyPath: m_Name
+      value: Momo
+      objectReference: {fileID: 0}
     - target: {fileID: 2292576379444011657, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
       propertyPath: m_Name
       value: Momo
@@ -112295,7 +112299,8 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 1364485254054655280, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
@@ -133762,6 +133767,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 919132149155446097, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 3968517352100129952, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_LocalScale.x
       value: 0.6
@@ -133818,6 +133827,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5405227146147210900, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
+      propertyPath: m_Name
+      value: Jephy
+      objectReference: {fileID: 0}
     - target: {fileID: 7330630477638988723, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
       propertyPath: m_Name
       value: Jephy
@@ -133827,7 +133840,8 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 919132149155446097, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
@@ -276746,8 +276760,13 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 9149118398974554600, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
+      propertyPath: m_Name
+      value: Lulu
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: -8139306553829287006, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
@@ -285813,7 +285832,8 @@ PrefabInstance:
       value: 0.75
       objectReference: {fileID: 0}
     m_RemovedComponents: []
-    m_RemovedGameObjects: []
+    m_RemovedGameObjects:
+    - {fileID: 7203300530140179688, guid: 528d3109753d3324f91f154a9c1b6c16, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 528d3109753d3324f91f154a9c1b6c16, type: 3}
