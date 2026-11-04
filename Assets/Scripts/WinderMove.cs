@@ -734,9 +734,15 @@ public class WinderMove : MonoBehaviour
         if (layer < 0)
             return false;
 
-        if (bodyAnimator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0"))
+        if (IsAttackState(bodyAnimator.GetCurrentAnimatorStateInfo(layer)))
             return true;
-        return bodyAnimator.IsInTransition(layer) && bodyAnimator.GetNextAnimatorStateInfo(layer).IsName("Attack 0");
+        return bodyAnimator.IsInTransition(layer) && IsAttackState(bodyAnimator.GetNextAnimatorStateInfo(layer));
+    }
+
+    // 애니메이터 공격 상태 이름: "Attack" (예전 이름 "Attack 0"도 인식)
+    static bool IsAttackState(AnimatorStateInfo info)
+    {
+        return info.IsName("Attack") || info.IsName("Attack 0");
     }
 
     void CacheSpring()
@@ -1546,13 +1552,16 @@ public class WinderMove : MonoBehaviour
         bool alongZ = size.z >= size.x;
         float longLen = alongZ ? size.z : size.x;
         float lateral = alongZ ? size.x : size.z;
-        float radius = Mathf.Max(Mathf.Max(lateral, size.y) * 0.5f, 0.18f);
+        // 반지름은 높이 기준 — 폭 기준이면 캡슐 바닥이 땅 밑으로 내려가 몸이 위로 떠오름
+        float radius = Mathf.Clamp(size.y * 0.5f, 0.18f, Mathf.Max(lateral * 0.5f, 0.18f));
         float capsuleHeight = Mathf.Max(longLen, radius * 2f + 0.02f);
 
+        Vector3 center = (min + max) * 0.5f;
+        center.y = min.y + radius;
         bodyCapsule.direction = alongZ ? 2 : 0;
         bodyCapsule.height = capsuleHeight;
         bodyCapsule.radius = radius;
-        bodyCapsule.center = (min + max) * 0.5f;
+        bodyCapsule.center = center;
     }
 
     void EncapsulateBone(HumanBodyBones bone, ref Vector3 min, ref Vector3 max)
@@ -2087,7 +2096,11 @@ public class WinderMove : MonoBehaviour
     void UpdateMoveAnimation()
     {
         if (isProne)
+        {
+            // 엎드린 상태: 기어가기 방향 (W 앞, S 뒤, A 왼쪽, D 오른쪽)
+            animationController.SetProneMove(MoveInput);
             return;
+        }
 
         if (MoveInput.magnitude > 0.1f)
         {

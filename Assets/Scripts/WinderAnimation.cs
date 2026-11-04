@@ -7,6 +7,7 @@ public class WinderAnimation : MonoBehaviour
     private const int NormalDamage = 25;
     private const int GoldDamage = 100;
     private static readonly Collider[] AttackHits = new Collider[16];
+    private const string AttackStateName = "Attack"; // 애니메이터 공격 상태 이름 (예전 이름 "Attack 0"도 인식)
 
     private Animator animator;
     private WinderMove move;
@@ -113,6 +114,13 @@ public class WinderAnimation : MonoBehaviour
         animator.SetBool("IsProne", isProne);
     }
 
+    /// <summary>엎드린 상태 기어가기 방향 (Prone 블렌드 트리: MoveX/MoveY)</summary>
+    public void SetProneMove(Vector2 input)
+    {
+        animator.SetFloat("MoveX", input.x, 0.1f, Time.deltaTime);
+        animator.SetFloat("MoveY", input.y, 0.1f, Time.deltaTime);
+    }
+
     public void SetFaint(bool faint)
     {
         if (faint)
@@ -174,13 +182,13 @@ public class WinderAnimation : MonoBehaviour
 
         if (animator.IsInTransition(layer))
         {
-            if (animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0"))
+            if (animator.GetCurrentAnimatorStateInfo(layer).IsName(AttackStateName) || animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0"))
                 return true;
-            if (animator.GetNextAnimatorStateInfo(layer).IsName("Attack 0"))
+            if (animator.GetNextAnimatorStateInfo(layer).IsName(AttackStateName) || animator.GetNextAnimatorStateInfo(layer).IsName("Attack 0"))
                 return true;
         }
 
-        return animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0");
+        return animator.GetCurrentAnimatorStateInfo(layer).IsName(AttackStateName) || animator.GetCurrentAnimatorStateInfo(layer).IsName("Attack 0");
     }
 
     void HitTickToys()
