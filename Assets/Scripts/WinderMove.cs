@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
 
 public class WinderMove : MonoBehaviour
 {
@@ -117,6 +118,23 @@ public class WinderMove : MonoBehaviour
         }
     }
     private TickToyHud hud;
+
+    // FPS 무기: 내 카메라가 그릴 때만 카메라에 붙은 무기 복사본을 보여주고 손 무기는 숨김.
+    // 그 외(씬 뷰·다른 카메라)는 손에 든 무기만 보임.
+    private Camera fpsCam;
+    private Transform viewWeapon;        // 카메라 자식, 렌더러만 있는 복사본
+    private Transform viewWeaponSource;  // 복사 원본(기본/황금)
+    private Renderer[] viewRenderers;
+    private Renderer[] handRenderers;
+    private Vector3 viewBaseScale = Vector3.one;
+    private float viewAttackWeight;
+    [Header("FPS 무기 (내 화면에서 보이는 위치)")]
+    [Tooltip("카메라 기준 위치 (x 오른쪽, y 위, z 앞)")]
+    [SerializeField] private Vector3 fpsWeaponPosition = new Vector3(0.36f, -0.13f, 0.44f);
+    [Tooltip("카메라 기준 회전")]
+    [SerializeField] private Vector3 fpsWeaponRotation = new Vector3(4.8f, 206.1f, 328.2f);
+    [Tooltip("내 화면 무기 크기 배율")]
+    [SerializeField] private float fpsWeaponScale = 0.85f;
     [SerializeField] private int hp = 100;
 
     public int Hp => hp;
@@ -235,6 +253,8 @@ public class WinderMove : MonoBehaviour
         HideBodyFromOwnCamera();
         PlaceFpsCamera();
         CacheAimBones();
+        if (cameraPivot != null)
+            fpsCam = cameraPivot.GetComponentInChildren<Camera>();
     }
 
     void PlaceFpsCamera()
@@ -353,6 +373,8 @@ public class WinderMove : MonoBehaviour
 
     void OnEnable()
     {
+        RenderPipelineManager.beginCameraRendering += OnBeginCameraRendering;
+        RenderPipelineManager.endCameraRendering += OnEndCameraRendering;
         Physics.ContactModifyEvent += ModifyStepContacts;
     }
 
@@ -568,6 +590,7 @@ public class WinderMove : MonoBehaviour
 
         CacheHoldPose();
         HoldWeaponArm();
+        UpdateViewWeapon();
 
         Vector3 axis = transform.right;
         if (spine != null)
@@ -588,6 +611,118 @@ public class WinderMove : MonoBehaviour
         aimHand.localRotation = holdHand;
         aimArm.Rotate(transform.right, -70f, Space.World);
         aimArm.Rotate(transform.up, aimLeft ? 18f : -18f, Space.World);
+    }
+
+    Transform ActiveHandWeapon()
+    {
+        if (goldWeaponInstance != null && goldWeaponInstance.activeInHierarchy)
+            return goldWeaponInstance.transform;
+        if (normalWeapon == null)
+            CacheNormalWeapon();
+        if (normalWeapon != null && normalWeapon.gameObject.activeInHierarchy)
+            return normalWeapon;
+        return null;
+    }
+
+    /// <summary>FPS 무기: 카메라 기준 고정 자세(Inspector 값). 공격 때만 손 무기의 휘두르는 동작을 따라감.</summary>
+    void UpdateViewWeapon()
+    {
+        if (cameraPivot == null || fpsCam == null)
+            return;
+
+        Transform weapon = ActiveHandWeapon();
+        if (weapon == null)
+            return;
+
+        if (weapon != viewWeaponSource)
+            BuildViewWeapon(weapon);
+
+        // 상하 회전을 뺀 카메라 기준 손 무기 자세 (공격 동작용)
+        Transform parent = cameraPivot.parent;
+        Vector3 livePos = parent.InverseTransformPoint(weapon.position) - cameraPivot.localPosition;
+        Quaternion liveRot = Quaternion.Inverse(parent.rotation) * weapon.rotation;
+
+        Vector3 restPos = fpsWeaponPosition;
+        Quaternion restRot = Quaternion.Euler(fpsWeaponRotation);
+        Vector3 restScale = viewBaseScale * fpsWeaponScale;
+
+        viewAttackWeight = Mathf.MoveTowards(viewAttackWeight, IsAttacking() ? 1f : 0f, Time.deltaTime * 10f);
+        if (viewAttackWeight <= 0f)
+        {
+            viewWeapon.localPosition = restPos;
+            viewWeapon.localRotation = restRot;
+            viewWeapon.localScale = restScale;
+        }
+        else
+        {
+            viewWeapon.localPosition = Vector3.Lerp(restPos, livePos, viewAttackWeight);
+            viewWeapon.localRotation = Quaternion.Slerp(restRot, liveRot, viewAttackWeight);
+            viewWeapon.localScale = Vector3.Lerp(restScale, viewBaseScale, viewAttackWeight);
+        }
+    }
+
+    void BuildViewWeapon(Transform weapon)
+    {
+        if (viewWeapon != null)
+            Destroy(viewWeapon.gameObject);
+
+        // 렌더러만 복사 (콜라이더·스크립트 없음). 카메라 자식이라 위아래 봐도 화면 속 위치 고정
+        GameObject copy = new GameObject("FPSWeapon");
+        viewWeapon = copy.transform;
+        viewWeapon.SetParent(cameraPivot, false);
+        Vector3 ls = weapon.lossyScale;
+        Vector3 ps = cameraPivot.lossyScale;
+        viewBaseScale = new Vector3(ls.x / ps.x, ls.y / ps.y, ls.z / ps.z);
+        viewWeapon.localScale = viewBaseScale;
+
+        MeshFilter[] filters = weapon.GetComponentsInChildren<MeshFilter>(true);
+        var list = new List<Renderer>();
+        for (int i = 0; i < filters.Length; i++)
+        {
+            MeshRenderer src = filters[i].GetComponent<MeshRenderer>();
+            if (src == null || filters[i].sharedMesh == null)
+                continue;
+            GameObject part = new GameObject(filters[i].name);
+            part.transform.SetParent(viewWeapon, false);
+            part.transform.localPosition = weapon.InverseTransformPoint(filters[i].transform.position);
+            part.transform.localRotation = Quaternion.Inverse(weapon.rotation) * filters[i].transform.rotation;
+            part.transform.localScale = filters[i].transform.lossyScale.x / weapon.lossyScale.x * Vector3.one;
+            part.AddComponent<MeshFilter>().sharedMesh = filters[i].sharedMesh;
+            MeshRenderer mr = part.AddComponent<MeshRenderer>();
+            mr.sharedMaterials = src.sharedMaterials;
+            mr.shadowCastingMode = ShadowCastingMode.Off;
+            mr.enabled = false;
+            list.Add(mr);
+        }
+
+        viewRenderers = list.ToArray();
+        handRenderers = weapon.GetComponentsInChildren<Renderer>(true);
+        viewWeaponSource = weapon;
+    }
+
+    void OnBeginCameraRendering(ScriptableRenderContext context, Camera cam)
+    {
+        if (cam != fpsCam || viewRenderers == null || State != WinderState.Play)
+            return;
+        SetViewWeaponVisible(true);
+    }
+
+    void OnEndCameraRendering(ScriptableRenderContext context, Camera cam)
+    {
+        if (cam != fpsCam || viewRenderers == null)
+            return;
+        SetViewWeaponVisible(false);
+    }
+
+    void SetViewWeaponVisible(bool fps)
+    {
+        for (int i = 0; i < viewRenderers.Length; i++)
+            viewRenderers[i].enabled = fps;
+        for (int i = 0; i < handRenderers.Length; i++)
+        {
+            if (handRenderers[i] != null)
+                handRenderers[i].forceRenderingOff = fps;
+        }
     }
 
     bool IsAttacking()
@@ -1602,6 +1737,8 @@ public class WinderMove : MonoBehaviour
 
     void OnDisable()
     {
+        RenderPipelineManager.beginCameraRendering -= OnBeginCameraRendering;
+        RenderPipelineManager.endCameraRendering -= OnEndCameraRendering;
         Physics.ContactModifyEvent -= ModifyStepContacts;
         ReleaseStep();
     }

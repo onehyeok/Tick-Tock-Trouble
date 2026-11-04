@@ -275,14 +275,8 @@ public class TickToyAnimation : MonoBehaviour
         bool winding = leftUpperLeg != null && animator.GetBool("IsWinding");
         if (winding && !IsProne() && !move.IsDead && !move.IsFainted)
         {
-            // 와인딩: 휴머노이드 리타깃으로 몸 높이가 어긋나 발이 뜨는 것 방지 → 발을 바닥에 붙임
-            if (move.IsGrounded)
-            {
-                BeginModelShift();
-                PlantFeet(false);
-            }
-            else
-                RestoreModel();
+            // 와인딩: 모델 위치는 건드리지 않음(y 고정). 발바닥은 Wind 클립의 Root Y = Feet 설정으로 바닥에 맞춤
+            RestoreModel();
             move.FitProneCollider();
             return;
         }
