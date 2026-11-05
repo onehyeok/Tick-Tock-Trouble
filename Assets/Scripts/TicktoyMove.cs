@@ -27,9 +27,11 @@ public class TickToyMove : MonoBehaviour
     [SerializeField] private float cameraLookAhead = 4f;
     [Tooltip("시작할 때 위아래 각도.")]
     [SerializeField] private float cameraStartPitch = 12f;
+    [Tooltip("달리기(능력) 쓰는 순간 한 번 나오는 흙먼지 바람 이펙트 (프리팹 자식 RunWhoosh, 약 2초)")]
+    [SerializeField] private GameObject runEffect;
+    private ParticleSystem[] runParticles;
+    private bool wasRunning;
     private const float CameraPitchScale = 0.22f;
-    private const float MinCameraPitch = -20f;
-    private const float MaxCameraPitch = 45f;
     private const float FixedFieldOfView = 78f;
 
     private TickToyAnimation animationController;
@@ -476,6 +478,7 @@ public class TickToyMove : MonoBehaviour
 
         if (State == TickToyState.Dead)
         {
+            UpdateRunEffect();
             if (IsTrapFrozen)
                 EndTrapFreeze();
             TickDeadFall();
@@ -507,6 +510,7 @@ public class TickToyMove : MonoBehaviour
             if (runTimeLeft <= 0f && State == TickToyState.Run)
                 State = TickToyState.Play;
         }
+        UpdateRunEffect();
 
         // 분신 지속 UI용 타이머만 감소 — 분신 자체는 영구(맵 AI처럼 유지)
         if (duplicateTimeLeft > 0f)
@@ -582,6 +586,23 @@ public class TickToyMove : MonoBehaviour
     }
 
     
+
+    /// <summary>달리기 능력을 쓰는 순간 슝! (이펙트는 약 2초 뒤 저절로 사라짐)</summary>
+    void UpdateRunEffect()
+    {
+        bool running = State == TickToyState.Run;
+        if (running && !wasRunning && runEffect != null)
+        {
+            if (runParticles == null)
+                runParticles = runEffect.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < runParticles.Length; i++)
+            {
+                runParticles[i].Clear(true);
+                runParticles[i].Play(true);
+            }
+        }
+        wasRunning = running;
+    }
 
     void InputUpdate()
     {
@@ -832,15 +853,12 @@ public class TickToyMove : MonoBehaviour
 
         GameSettings.EnsureLoaded();
         float mouseX = Input.GetAxis("Mouse X");
-        float mouseY = Input.GetAxis("Mouse Y");
 
         if (PressedTurnAround())
             yaw += 180f;
 
+        // 틱토이는 좌우만 회전 (마우스 위아래로 카메라 각도 안 바뀜)
         yaw += mouseX * GameSettings.HorizontalSensitivity * Time.deltaTime;
-
-        cameraPitch -= mouseY * GameSettings.VerticalSensitivity * Time.deltaTime;
-        cameraPitch = Mathf.Clamp(cameraPitch, MinCameraPitch, MaxCameraPitch);
     }
 
     void UpdateTpsCamera()

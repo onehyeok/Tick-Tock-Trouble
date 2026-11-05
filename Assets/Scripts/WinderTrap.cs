@@ -209,6 +209,10 @@ public class WinderTrap : MonoBehaviour
         if (ignoredUntilExit.Contains(other.GetInstanceID()))
             return;
 
+        // AI 틱토이(맵 AI·분신)는 밟아도 아무 일 없음 — 플레이어 틱토이만 걸림
+        if (other.GetComponentInParent<TickToyAI>() != null)
+            return;
+
         TickToyMove toy = other.GetComponentInParent<TickToyMove>();
         if (toy == null || !toy.enabled || toy.IsDead || toy.IsTrapFrozen)
             return;

@@ -499,8 +499,39 @@ public class TickToyHud : MonoBehaviour
 
     float timerPulse;
 
+    // ---------------- "틱토이가 태엽을 정지시켰어요!" 알림 (씬에 있음) ----------------
+    [SerializeField] RectTransform stopNotice;
+    float stopNoticeTime = -1f;
+    const float StopNoticeSeconds = 2.5f;
+
+    /// <summary>틱토이가 와인더 등 뒤에서 E 로 태엽을 멈췄을 때</summary>
+    public void ShowWinderStoppedNotice()
+    {
+        if (stopNotice == null)
+            return;
+        stopNotice.gameObject.SetActive(true);
+        stopNoticeTime = 0f;
+    }
+
+    void TickStopNotice()
+    {
+        if (stopNotice == null || stopNoticeTime < 0f)
+            return;
+        stopNoticeTime += Time.unscaledDeltaTime;
+        // 톡 튀어나왔다가 잠깐 뒤 사라짐
+        float pop = Mathf.Clamp01(stopNoticeTime / 0.18f);
+        float s = pop < 1f ? Mathf.Lerp(0.6f, 1.08f, pop) : Mathf.Lerp(1.08f, 1f, Mathf.Clamp01((stopNoticeTime - 0.18f) / 0.12f));
+        stopNotice.localScale = new Vector3(s, s, 1f);
+        if (stopNoticeTime >= StopNoticeSeconds)
+        {
+            stopNotice.gameObject.SetActive(false);
+            stopNoticeTime = -1f;
+        }
+    }
+
     void LateUpdate()
     {
+        TickStopNotice();
         if (!statusStyled || timerBadge == null)
             return;
 

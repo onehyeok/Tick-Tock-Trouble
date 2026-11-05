@@ -183,6 +183,9 @@ public class TickToyAnimation : MonoBehaviour
             else
                 animator.SetTrigger("WindPause");
             winder.Freeze(5f);
+            TickToyHud hud = FindAnyObjectByType<TickToyHud>();
+            if (hud != null)
+                hud.ShowWinderStoppedNotice();
         }
     }
 

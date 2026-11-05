@@ -136,6 +136,9 @@ public class WinderMove : MonoBehaviour
     [SerializeField] private Vector3 fpsWeaponRotation = new Vector3(4.8f, 206.1f, 328.2f);
     [Tooltip("내 화면 무기 크기 배율")]
     [SerializeField] private float fpsWeaponScale = 0.85f;
+    [Tooltip("달리기(능력) 쓰는 순간 한 번 나오는 흙먼지 바람 이펙트 (프리팹 자식 RunWhoosh, 약 2초)")]
+    [SerializeField] private GameObject runEffect;
+    private ParticleSystem[] runParticles;
     [SerializeField] private int hp = 100;
 
     public int Hp => hp;
@@ -1328,6 +1331,21 @@ public class WinderMove : MonoBehaviour
         else
             runTimeLeft = 12f;
         runDuration = runTimeLeft;
+        PlayRunEffect();
+    }
+
+    /// <summary>달리기 능력을 쓰는 순간 슝! (이펙트는 약 2초 뒤 저절로 사라짐)</summary>
+    void PlayRunEffect()
+    {
+        if (runEffect == null)
+            return;
+        if (runParticles == null)
+            runParticles = runEffect.GetComponentsInChildren<ParticleSystem>(true);
+        for (int i = 0; i < runParticles.Length; i++)
+        {
+            runParticles[i].Clear(true);
+            runParticles[i].Play(true);
+        }
     }
 
     void UseFaintAbility(int level)
