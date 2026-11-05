@@ -6,8 +6,6 @@ public class MatchPrefabs : ScriptableObject
 {
     public GameObject winderPrefab;
     public GameObject[] tickToyPrefabs;
-    /// <summary>와인더 시작 방 (Models/WinderStartingPosition) — 맵에 없으면 이걸 놓음</summary>
-    public GameObject winderStartRoom;
 
     static MatchPrefabs cached;
 

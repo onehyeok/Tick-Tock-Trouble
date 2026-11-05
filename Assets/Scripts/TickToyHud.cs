@@ -298,7 +298,7 @@ public class TickToyHud : MonoBehaviour
         damagePopText = popGo.GetComponent<Text>();
         damagePopText.alignment = TextAnchor.MiddleCenter;
         damagePopText.fontSize = 42;
-        damagePopText.fontStyle = FontStyle.Bold;
+        damagePopText.fontStyle = displayFont == UIKit.Font ? FontStyle.Normal : FontStyle.Bold;
         damagePopText.raycastTarget = false;
         damagePopText.horizontalOverflow = HorizontalWrapMode.Overflow;
         damagePopText.verticalOverflow = VerticalWrapMode.Overflow;
@@ -452,12 +452,16 @@ public class TickToyHud : MonoBehaviour
 
     public void SetStatus(int nextTickToyCount, int nextWinderCount, int nextRoundCount, float nextRemainSeconds, int nextHp)
     {
+        // 매 프레임 호출됨 → 화면에 보이는 값이 바뀔 때만 글자 갱신
+        bool changed = tickToyCount != nextTickToyCount || winderCount != nextWinderCount || roundCount != nextRoundCount
+                       || hp != nextHp || Mathf.CeilToInt(remainSeconds) != Mathf.CeilToInt(nextRemainSeconds);
         tickToyCount = nextTickToyCount;
         winderCount = nextWinderCount;
         roundCount = nextRoundCount;
         remainSeconds = nextRemainSeconds;
         hp = nextHp;
-        RefreshStatus();
+        if (changed)
+            RefreshStatus();
     }
 
     void RefreshStatus()
@@ -466,9 +470,6 @@ public class TickToyHud : MonoBehaviour
             return;
 
         int seconds = Mathf.Max(0, Mathf.CeilToInt(remainSeconds));
-        countText.text = "TickToy 남은 수 " + tickToyCount + "  |  Winder 남은 수 " + winderCount;
-        roundText.text = "라운드 " + roundCount;
-        timeText.text = "남은 시간 " + (seconds / 60).ToString("00") + ":" + (seconds % 60).ToString("00");
         hpText.text = hp.ToString();
 
         if (statusStyled)
@@ -476,150 +477,35 @@ public class TickToyHud : MonoBehaviour
             tickToyBadgeCount.text = tickToyCount.ToString();
             winderBadgeCount.text = winderCount.ToString();
             timerValueText.text = (seconds / 60) + ":" + (seconds % 60).ToString("00");
+            if (roundValueText != null)
+            {
+                int total = MatchContext.Active ? MatchContext.Settings.rounds : 0;
+                roundValueText.text = total > 0 ? "ROUND " + roundCount + " / " + total : "ROUND " + roundCount;
+            }
+            return;
         }
+
+        countText.text = "TickToy 남은 수 " + tickToyCount + "  |  Winder 남은 수 " + winderCount;
+        roundText.text = "라운드 " + roundCount;
+        timeText.text = "남은 시간 " + (seconds / 60).ToString("00") + ":" + (seconds % 60).ToString("00");
     }
 
     // ---------------- 남은 수 · 남은 시간 (장난감 느낌 배지) ----------------
 
     bool statusStyled;
-    Text tickToyBadgeCount;
-    Text winderBadgeCount;
-    Text timerValueText;
-    Image timerBadgeBg;
-    RectTransform timerBadge;
-    static readonly Color BadgeCream = new Color(1f, 0.96f, 0.88f, 0.96f);
+    // 씬에 있는 상단 UI (DemoScene / SampleScene 의 HUD 캔버스 아래 UpperBar · RoundBadge · TimerBadge)
+    [SerializeField] Text tickToyBadgeCount;
+    [SerializeField] Text winderBadgeCount;
+    [SerializeField] Text timerValueText;
+    [SerializeField] Text roundValueText;
+    [SerializeField] RectTransform timerBadge;
     static readonly Color BadgeBrown = new Color(0.36f, 0.22f, 0.13f, 1f);
-    static readonly Color BadgeMint = new Color(0.36f, 0.78f, 0.66f, 1f);
     static readonly Color BadgePink = new Color(1f, 0.52f, 0.62f, 1f);
-    static readonly Color BadgeOrange = new Color(1f, 0.6f, 0.22f, 1f);
 
-    /// <summary>예전 파란 막대(남은 수·남은 시간)를 숨기고 둥근 배지로 다시 그림. 라운드 표시는 그대로.</summary>
+    /// <summary>씬에 상단 UI 가 연결돼 있으면 그걸로 표시</summary>
     void StyleStatusUi()
     {
-        if (statusStyled || countText == null || timeText == null)
-            return;
-
-        Canvas canvas = countText.canvas != null ? countText.canvas.rootCanvas : GetComponentInParent<Canvas>();
-        if (canvas == null)
-            return;
-
-        // 캔버스 기준 해상도에 맞춰 크기 환산 (1080 기준)
-        float k = 1f;
-        CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
-        if (scaler != null && scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize && scaler.referenceResolution.y > 1f)
-            k = scaler.referenceResolution.y / 1080f;
-
-        HideOldBar(countText);
-        HideOldBar(timeText);
-        Sprite round = UIKit.RuntimeRoundSprite();
-        Font font = UIKit.Font;
-
-        // 위 가운데: [틱토이 2] [와인더 1]
-        RectTransform group = UIKit.Rect(canvas.transform, "AliveBadges");
-        group.At(new Vector2(0.5f, 1f), new Vector2(0f, -4f * k), new Vector2(560f * k, 60f * k));
-        tickToyBadgeCount = Badge(group, "TickToyBadge", "틱토이", BadgeMint, new Vector2(-145f * k, 0f), k, round, font);
-        winderBadgeCount = Badge(group, "WinderBadge", "와인더", BadgePink, new Vector2(145f * k, 0f), k, round, font);
-
-        // 오른쪽 위: [시계 2:25]
-        timerBadge = UIKit.Rect(canvas.transform, "TimerBadge");
-        timerBadge.At(new Vector2(1f, 1f), new Vector2(-16f * k, -6f * k), new Vector2(230f * k, 58f * k));
-        timerBadgeBg = timerBadge.gameObject.AddComponent<Image>();
-        SetupBadgeImage(timerBadgeBg, BadgeCream, round);
-        AddBorder(timerBadge, BadgeOrange, round, k);
-        Sprite clock = LoadTimerIconSprite();
-        Image icon = UIKit.Rect(timerBadge, "Clock").gameObject.AddComponent<Image>();
-        icon.rectTransform.At(new Vector2(0f, 0.5f), new Vector2(8f * k, 0f), new Vector2(50f * k, 50f * k));
-        icon.sprite = clock;
-        icon.preserveAspect = true;
-        icon.raycastTarget = false;
-        if (clock == null)
-            icon.enabled = false;
-        timerValueText = BadgeLabel(timerBadge, "Time", "3:00", Mathf.RoundToInt(42 * k), BadgeBrown, font);
-        timerValueText.rectTransform.Fill(clock != null ? 60f * k : 10f * k, 0f, 10f * k, 0f);
-
-        statusStyled = true;
-    }
-
-    static void HideOldBar(Text t)
-    {
-        t.enabled = false;
-        Image bg = t.GetComponent<Image>();
-        if (bg == null && t.transform.parent != null)
-            bg = t.transform.parent.GetComponent<Image>();
-        if (bg != null)
-            bg.enabled = false;
-    }
-
-    static void SetupBadgeImage(Image img, Color color, Sprite round)
-    {
-        img.sprite = round;
-        img.type = Image.Type.Sliced;
-        img.color = color;
-        img.raycastTarget = false;
-        Shadow sh = img.gameObject.AddComponent<Shadow>();
-        sh.effectColor = new Color(0f, 0f, 0f, 0.3f);
-        sh.effectDistance = new Vector2(0f, -4f);
-    }
-
-    static void AddBorder(RectTransform badge, Color color, Sprite round, float k)
-    {
-        // 테두리: 뒤에 조금 더 큰 색 판
-        Image border = UIKit.Rect(badge, "Border").gameObject.AddComponent<Image>();
-        border.transform.SetAsFirstSibling();
-        border.rectTransform.Fill(-5f * k, -5f * k, -5f * k, -5f * k);
-        border.sprite = round;
-        border.type = Image.Type.Sliced;
-        border.color = color;
-        border.raycastTarget = false;
-        // 테두리가 배경 뒤로 가도록 배경을 자식으로 옮기지 않고, 배경 이미지를 한 겹 더 둠
-        Image inner = UIKit.Rect(badge, "Inner").gameObject.AddComponent<Image>();
-        inner.transform.SetSiblingIndex(1);
-        inner.rectTransform.Fill();
-        inner.sprite = round;
-        inner.type = Image.Type.Sliced;
-        inner.color = badge.GetComponent<Image>().color;
-        inner.raycastTarget = false;
-        badge.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f);
-    }
-
-    static Text BadgeLabel(Transform parent, string name, string text, int size, Color color, Font font)
-    {
-        Text t = UIKit.Rect(parent, name).gameObject.AddComponent<Text>();
-        t.font = font;
-        t.text = text;
-        t.fontSize = size;
-        t.color = color;
-        t.alignment = TextAnchor.MiddleCenter;
-        t.horizontalOverflow = HorizontalWrapMode.Overflow;
-        t.verticalOverflow = VerticalWrapMode.Overflow;
-        t.raycastTarget = false;
-        return t;
-    }
-
-    /// <summary>[색 라벨 | 숫자] 모양 배지. 숫자 Text 반환</summary>
-    Text Badge(RectTransform parent, string name, string label, Color color, Vector2 pos, float k, Sprite round, Font font)
-    {
-        RectTransform badge = UIKit.Rect(parent, name);
-        badge.At(new Vector2(0.5f, 0.5f), pos, new Vector2(270f * k, 56f * k));
-        Image bg = badge.gameObject.AddComponent<Image>();
-        SetupBadgeImage(bg, BadgeCream, round);
-        AddBorder(badge, color, round, k);
-
-        Image tag = UIKit.Rect(badge, "Tag").gameObject.AddComponent<Image>();
-        tag.rectTransform.At(new Vector2(0f, 0.5f), new Vector2(4f * k, 0f), new Vector2(150f * k, 46f * k));
-        tag.sprite = round;
-        tag.type = Image.Type.Sliced;
-        tag.color = color;
-        tag.raycastTarget = false;
-        Text tagText = BadgeLabel(tag.transform, "Label", label, Mathf.RoundToInt(30 * k), Color.white, font);
-        tagText.rectTransform.Fill();
-        Outline o = tagText.gameObject.AddComponent<Outline>();
-        o.effectColor = new Color(0f, 0f, 0f, 0.25f);
-        o.effectDistance = new Vector2(2f, -2f);
-
-        Text count = BadgeLabel(badge, "Count", "0", Mathf.RoundToInt(42 * k), BadgeBrown, font);
-        count.rectTransform.Fill(156f * k, 0f, 6f * k, 0f);
-        return count;
+        statusStyled = tickToyBadgeCount != null && winderBadgeCount != null && timerValueText != null && timerBadge != null;
     }
 
     float timerPulse;
@@ -648,24 +534,50 @@ public class TickToyHud : MonoBehaviour
         if (bodyFont == null)
             bodyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
-        displayFont = Font.CreateDynamicFontFromOSFont(new[] { "Arial Rounded MT Bold", "Arial Rounded MT", "Trebuchet MS" }, 48);
+        // HP 숫자 · Lv 글씨: 게임 UI(로비/배지)와 같은 둥근 Jua 폰트
+        displayFont = UIKit.Font;
+        if (displayFont == null)
+            displayFont = Font.CreateDynamicFontFromOSFont(new[] { "Arial Rounded MT Bold", "Arial Rounded MT", "Trebuchet MS" }, 48);
         if (displayFont == null)
             displayFont = bodyFont;
 
         Text[] texts = GetComponentsInChildren<Text>(true);
         for (int i = 0; i < texts.Length; i++)
         {
-            if (texts[i] == levelText || texts[i] == hpText)
+            if (texts[i] == levelText || texts[i] == hpText || texts[i].font == UIKit.Font)
                 continue;
 
             texts[i].font = bodyFont;
         }
 
-        ApplyDisplayFont(levelText, 50);
+        StyleHpAndLevel();
+    }
+
+    void StyleHpAndLevel()
+    {
+        // Lv: 흰/파랑/빨강 글씨 + 진한 갈색 테두리
+        ApplyDisplayFont(levelText, 54);
+        AddTextOutline(levelText, new Color(0.30f, 0.16f, 0.07f, 1f), 3f);
+        // HP 숫자: 갈색 글씨 + 크림색 테두리 (배지 숫자와 같은 느낌)
         if (hpText != null)
+        {
             ApplyDisplayFont(hpText, hpText.fontSize);
-        if (hpText != null)
             hpText.color = new Color(0.45f, 0.22f, 0.08f, 1f);
+            AddTextOutline(hpText, new Color(1f, 0.96f, 0.88f, 1f), 2.5f);
+        }
+    }
+
+    static void AddTextOutline(Text text, Color color, float size)
+    {
+        if (text == null)
+            return;
+        Outline outline = null;
+        foreach (Outline o in text.GetComponents<Outline>())
+            outline = o;
+        if (outline == null)
+            outline = text.gameObject.AddComponent<Outline>();
+        outline.effectColor = color;
+        outline.effectDistance = new Vector2(size, -size);
     }
 
     void ApplyDisplayFont(Text text, int size)
@@ -675,9 +587,11 @@ public class TickToyHud : MonoBehaviour
 
         text.font = displayFont;
         text.fontSize = size;
-        text.fontStyle = FontStyle.Bold;
+        text.fontStyle = FontStyle.Normal; // Jua 는 원래 굵어서 가짜 Bold 안 씀
 
-        Shadow shadow = text.GetComponent<Shadow>();
+        Shadow shadow = null;
+        foreach (Shadow sh in text.GetComponents<Shadow>())
+            if (!(sh is Outline)) { shadow = sh; break; }
         if (shadow == null)
             shadow = text.gameObject.AddComponent<Shadow>();
 
@@ -685,12 +599,27 @@ public class TickToyHud : MonoBehaviour
         shadow.effectDistance = new Vector2(2f, -2f);
     }
 
+    // 매 프레임 씬 전체 검색하지 않도록 0.5초마다만 다시 찾음
+    TickToyMove[] cachedToys = System.Array.Empty<TickToyMove>();
+    WinderMove[] cachedWinders = System.Array.Empty<WinderMove>();
+    float charCacheTime = -1f;
+
+    void RefreshCharacterCache()
+    {
+        if (Time.unscaledTime - charCacheTime < 0.5f && charCacheTime >= 0f)
+            return;
+        charCacheTime = Time.unscaledTime;
+        cachedToys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        cachedWinders = FindObjectsByType<WinderMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+    }
+
     bool ShowUsingGauge()
     {
         TickToyMove usingToy = null;
         TickToyMove faintToy = null;
         bool faintCancelled = false;
-        TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        RefreshCharacterCache();
+        TickToyMove[] toys = cachedToys;
         for (int i = 0; i < toys.Length; i++)
         {
             // 분신 복제본(비활성 Move)은 무시 — 본체만 달리기/드러눕기 UI
@@ -711,7 +640,7 @@ public class TickToyHud : MonoBehaviour
             usingToy = faintToy;
 
         if (usingToy == null)
-            return false;
+            return ShowWinderRunGauge();
 
         if (usingToy.AbilityDuration <= 0f)
         {
@@ -739,9 +668,24 @@ public class TickToyHud : MonoBehaviour
         abilityTimerFill.fillAmount = elapsed01;
     }
 
+    /// <summary>와인더 달리기 능력 사용 중이면 틱토이처럼 시계 타이머 표시</summary>
+    bool ShowWinderRunGauge()
+    {
+        for (int i = 0; i < cachedWinders.Length; i++)
+        {
+            WinderMove w = cachedWinders[i];
+            if (w == null || !w.enabled || w.RunTimeLeft <= 0f || w.RunDuration <= 0.0001f)
+                continue;
+            ShowAbilityTimer(Mathf.Clamp01(w.RunTimeLeft / w.RunDuration));
+            return true;
+        }
+        return false;
+    }
+
     bool IsAnyTickToyWinding()
     {
-        TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        RefreshCharacterCache();
+        TickToyMove[] toys = cachedToys;
         for (int i = 0; i < toys.Length; i++)
         {
             if (toys[i] != null && toys[i].enabled && toys[i].IsWinding)

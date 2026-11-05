@@ -85,6 +85,7 @@ public class WinderMove : MonoBehaviour
     private int abilityKind;
     private int abilityLevel;
     private float runTimeLeft;
+    private float runDuration;
     private float faintTimeLeft;
     private bool faintCanBreak;
     private bool faintOnGround;
@@ -138,6 +139,9 @@ public class WinderMove : MonoBehaviour
     [SerializeField] private int hp = 100;
 
     public int Hp => hp;
+    /// <summary>달리기 능력 남은 시간 / 총 시간 (HUD 시계 타이머용)</summary>
+    public float RunTimeLeft => runTimeLeft;
+    public float RunDuration => runDuration;
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
@@ -1323,6 +1327,7 @@ public class WinderMove : MonoBehaviour
             runTimeLeft = 8f;
         else
             runTimeLeft = 12f;
+        runDuration = runTimeLeft;
     }
 
     void UseFaintAbility(int level)

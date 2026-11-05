@@ -80,7 +80,6 @@ public static class MultiplayerSceneBuilder
             .Select(n => AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/" + n + ".prefab"))
             .Where(p => p != null)
             .ToArray();
-        prefabs.winderStartRoom = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Models/WinderStartingPosition.prefab");
         EditorUtility.SetDirty(prefabs);
     }
 

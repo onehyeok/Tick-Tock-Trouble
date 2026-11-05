@@ -276,6 +276,21 @@ public class WinderAnimation : MonoBehaviour
             return;
         }
 
+        // 온라인: 다른 사람(또는 방장 쪽 AI)의 퍼펫 → 방장을 거쳐 피해 전달
+        NetPuppet puppet = hit.GetComponentInParent<NetPuppet>();
+        if (puppet != null)
+        {
+            if (!puppet.IsTickToyLike || !puppet.Alive || !hitThisSwing.Add(puppet.GetInstanceID()))
+                return;
+
+            FusionMatchBackend.Online?.SendHit(puppet, damage);
+            if (puppet.Kind == NetPose.KindAI && !gold && move != null)
+                move.TakeHit(NormalDamage);
+            if (gold && move != null)
+                move.ConsumeGoldClubOnHit();
+            return;
+        }
+
         // 진짜 TickToy → 대상만 피해(황금이면 -100), 와인더 자해 없음
         TickToyMove toy = hit.GetComponentInParent<TickToyMove>();
         if (toy == null || toy.IsDead || !hitThisSwing.Add(toy.GetInstanceID()))

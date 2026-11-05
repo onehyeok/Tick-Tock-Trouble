@@ -124,7 +124,13 @@ public class LobbyUI : MonoBehaviour
         Hook(tickToyTeamButton, () => backend.SetTeam(RoomPlayer.TeamTickToy));
         Hook(winderTeamButton, () => backend.SetTeam(RoomPlayer.TeamWinder));
         Hook(switchTeamButton, () => backend.SetTeam(localTeam == RoomPlayer.TeamTickToy ? RoomPlayer.TeamWinder : RoomPlayer.TeamTickToy));
-        Hook(addBotButton, () => (backend as OfflineMatchBackend)?.AddTestBot());
+        Hook(addBotButton, () =>
+        {
+            if (backend is OfflineMatchBackend offline)
+                offline.AddTestBot();
+            else if (backend is FusionMatchBackend online)
+                online.AddTestBot();
+        });
 
         if (roomItemTemplate != null)
             roomItemTemplate.gameObject.SetActive(false);
@@ -137,7 +143,7 @@ public class LobbyUI : MonoBehaviour
 #if !UNITY_EDITOR
         SetActive(addBotButton != null ? addBotButton.gameObject : null, false);
 #endif
-        if (addBotButton != null && !(backend is OfflineMatchBackend))
+        if (addBotButton != null && !(backend is OfflineMatchBackend) && !(backend is FusionMatchBackend))
             addBotButton.gameObject.SetActive(false);
 
         if (!backend.IsConnected)

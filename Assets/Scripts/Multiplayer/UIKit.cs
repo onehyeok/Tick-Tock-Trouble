@@ -86,33 +86,6 @@ public static class UIKit
         return r;
     }
 
-    /// <summary>실행 중에 쓸 둥근 모서리 스프라이트 (9-slice) — 에디터 기본 스프라이트가 없을 때</summary>
-    public static Sprite RuntimeRoundSprite()
-    {
-        if (RoundSprite != null)
-            return RoundSprite;
-        const int size = 64;
-        const float radius = 30f;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        tex.wrapMode = TextureWrapMode.Clamp;
-        var px = new Color32[size * size];
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                float cx = Mathf.Clamp(x + 0.5f, radius, size - radius);
-                float cy = Mathf.Clamp(y + 0.5f, radius, size - radius);
-                float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(cx, cy));
-                byte a = (byte)(Mathf.Clamp01(radius - d + 0.5f) * 255f);
-                px[y * size + x] = new Color32(255, 255, 255, a);
-            }
-        }
-        tex.SetPixels32(px);
-        tex.Apply();
-        RoundSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(31, 31, 31, 31));
-        return RoundSprite;
-    }
-
     public static Image Panel(Transform parent, string name, Color color, bool rounded = true)
     {
         var r = Rect(parent, name);

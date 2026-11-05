@@ -9,6 +9,9 @@ using UnityEngine.AI;
 /// </summary>
 public class DemoSceneAIBootstrap : MonoBehaviour
 {
+    /// <summary>온라인에서 방장이 아닐 때 true → AI 는 방장 것을 따라 보여주므로 여기서 만들지 않음</summary>
+    public static bool SkipAISpawn;
+
     [SerializeField] private GameObject[] tickToyPrefabs;
     [SerializeField] private int aiCount = 40;
     [SerializeField] private float minSpawnSpacing = 2.5f;
@@ -35,7 +38,8 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         BuildTileBarriers();
         // 한 프레임에 몰리지 않게 나눠 스폰 (시작 끊김 완화)
         yield return null;
-        yield return SpawnAIsOverFrames();
+        if (!SkipAISpawn)
+            yield return SpawnAIsOverFrames();
         EnsureSceneAudioListener();
         TickToyMove.KeepOneAudioListener();
     }

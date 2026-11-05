@@ -15,7 +15,6 @@ public class TickToyAI : MonoBehaviour
     }
 
     [SerializeField] private float walkSpeed = 3f;
-    [SerializeField] private float runSpeed = 6f;
     [SerializeField] private float idleMin = 1.5f;
     [SerializeField] private float idleMax = 4f;
     [SerializeField] private float runMin = 3f;
@@ -462,7 +461,8 @@ public class TickToyAI : MonoBehaviour
     {
         state = AiState.Run;
         stateTimer = Random.Range(runMin, runMax);
-        currentSpeed = Random.value < 0.35f ? runSpeed : walkSpeed;
+        // AI 는 능력(달리기)을 못 씀 → 항상 걷기 속도
+        currentSpeed = walkSpeed;
         stuckTimer = 0f;
         lastProgressPos = rb != null ? rb.position : transform.position;
         ResolveWorldPenetration();

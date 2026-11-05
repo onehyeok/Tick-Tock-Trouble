@@ -118,43 +118,6 @@ public static class MatchContext
         }
     }
 
-    /// <summary>인원에 따라 와인더 수: 4명 이하 1명, 8명 이하 2명, 그 이상 3명</summary>
-    public static int WinderCountFor(int players)
-    {
-        if (players <= 4)
-            return 1;
-        if (players <= 8)
-            return 2;
-        return 3;
-    }
-
-    /// <summary>라운드마다 와인더/틱토이 무작위 배정</summary>
-    public static void AssignRoles()
-    {
-        var ids = new List<int>();
-        for (int i = 0; i < Players.Count; i++)
-            ids.Add(Players[i].id);
-
-        for (int i = ids.Count - 1; i > 0; i--)
-        {
-            int j = UnityEngine.Random.Range(0, i + 1);
-            int t = ids[i];
-            ids[i] = ids[j];
-            ids[j] = t;
-        }
-
-        WinderIds.Clear();
-        int count = Mathf.Min(WinderCountFor(ids.Count), ids.Count);
-        for (int i = 0; i < count; i++)
-            WinderIds.Add(ids[i]);
-    }
-
-    public static void SetRoles(IEnumerable<int> winderIds)
-    {
-        WinderIds.Clear();
-        WinderIds.AddRange(winderIds);
-    }
-
     public static void End()
     {
         Active = false;
