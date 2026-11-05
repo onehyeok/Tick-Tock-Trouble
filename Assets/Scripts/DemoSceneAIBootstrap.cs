@@ -110,6 +110,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         int failSpacing = 0;
         const int perFrame = 2;
 
+        CacheBuildingBounds();
         List<Vector3> slots = BuildSpreadSlots(mapBounds, Mathf.Max(aiCount * 4, 80));
         int slotIndex = 0;
 
@@ -316,7 +317,8 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             return false;
         }
 
-        if (strictBuilding && IsClearlyInsideBuilding(ground))
+        // 건물 안·아래(건물 밑 타일 위)는 단계와 상관없이 항상 제외
+        if ((strictBuilding && IsClearlyInsideBuilding(ground)) || IsUnderOrInsideBuilding(ground))
         {
             reason = 3;
             return false;
@@ -468,6 +470,52 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             if (AiGroundUtil.IsWalkableGround(c) || AiGroundUtil.IsLooseGround(c))
                 continue;
             if (IsBuildingObject(c.transform))
+                return true;
+        }
+
+        return false;
+    }
+
+    readonly List<Bounds> buildingBounds = new List<Bounds>();
+
+    /// <summary>건물 모양(렌더러) 범위 — 콜라이더가 없는 건물도 막기 위해</summary>
+    void CacheBuildingBounds()
+    {
+        buildingBounds.Clear();
+        foreach (Renderer r in FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (r == null || r is ParticleSystemRenderer || r is SkinnedMeshRenderer)
+                continue;
+            if (r.bounds.size.y < 2f) // 바닥 타일·작은 소품 제외
+                continue;
+            if (IsBuildingObject(r.transform))
+                buildingBounds.Add(r.bounds);
+        }
+    }
+
+    /// <summary>
+    /// 위에서 내려다봤을 때 건물(지붕·벽)이 먼저 맞거나, 건물 모양 범위 안이면 true
+    /// (건물 밑에도 바닥 타일이 깔려 있어서 타일 위라는 것만으로는 건물 안에 스폰될 수 있었음)
+    /// </summary>
+    bool IsUnderOrInsideBuilding(Vector3 ground)
+    {
+        const float skyHeight = 80f;
+        Vector3 from = ground + Vector3.up * skyHeight;
+        RaycastHit[] hits = Physics.RaycastAll(from, Vector3.down, skyHeight - 0.3f, ~0, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < hits.Length; i++)
+        {
+            if (hits[i].point.y <= ground.y + 0.5f)
+                continue;
+            if (IsBuildingObject(hits[i].collider.transform))
+                return true;
+        }
+
+        for (int i = 0; i < buildingBounds.Count; i++)
+        {
+            Bounds b = buildingBounds[i];
+            if (ground.x > b.min.x - 0.3f && ground.x < b.max.x + 0.3f
+                && ground.z > b.min.z - 0.3f && ground.z < b.max.z + 0.3f
+                && ground.y > b.min.y - 1f && ground.y < b.max.y)
                 return true;
         }
 

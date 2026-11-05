@@ -80,6 +80,8 @@ public class Model2HumanoidImporter : AssetPostprocessor
     {
         EditorApplication.delayCall += () =>
         {
+            if (!AssetDatabase.IsValidFolder("Assets/Model2"))
+                return; // 폴더가 없으면 할 일 없음 (경고 방지)
             foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { "Assets/Model2" }))
             {
                 string p = AssetDatabase.GUIDToAssetPath(guid);

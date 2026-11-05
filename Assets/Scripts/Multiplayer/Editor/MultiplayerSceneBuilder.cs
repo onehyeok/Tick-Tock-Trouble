@@ -443,6 +443,9 @@ public static class MultiplayerSceneBuilder
         ui.startButton.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 3f);
         ((RectTransform)ui.startButton.transform).At(new Vector2(1f, 0f), new Vector2(-110f, 70f), new Vector2(480f, 120f));
 
+        // 오른쪽 아래 채팅창 (준비 버튼 위, 살짝 투명)
+        ChatUIBuilder.Build(c, false, new Vector2(1f, 0f), new Vector2(-110f, 205f), new Vector2(480f, 190f));
+
         panel.gameObject.SetActive(false);
     }
 }

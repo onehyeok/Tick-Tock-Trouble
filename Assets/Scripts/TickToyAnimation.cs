@@ -121,10 +121,11 @@ public class TickToyAnimation : MonoBehaviour
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.H))
+        bool menuOpen = GameSettings.MenuOpen; // 설정 메뉴 / 채팅 입력 중엔 키 입력 무시
+        if (!menuOpen && Input.GetKeyDown(KeyCode.H))
             PlayGetHit();
 
-        if (Input.GetKeyDown(KeyCode.K))
+        if (!menuOpen && Input.GetKeyDown(KeyCode.K))
         {
             move.IsDead = true;
             animator.SetTrigger("Die");
@@ -146,6 +147,14 @@ public class TickToyAnimation : MonoBehaviour
 
         if (isEmoting && Time.time >= emoteEndTime)
             StopEmote();
+
+        if (menuOpen)
+        {
+            animator.SetBool("IsWinding", false);
+            move.IsWinding = false;
+            SetSpineSpringsActive(false);
+            return;
+        }
 
         // Z Greeting(상체 마스크) / X·C 풀바디 댄스(마스크 없음)
         if (Input.GetKeyDown(KeyCode.Z))

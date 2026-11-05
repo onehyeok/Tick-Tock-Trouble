@@ -20,11 +20,11 @@ public class TickToyMove : MonoBehaviour
     [Header("TPS Camera")]
     [SerializeField] private Transform cameraPivot;
     [Tooltip("뒤로 빠지는 거리. 크면 멀어지고, 캐릭터가 안 보이면 줄이세요.")]
-    [SerializeField] private float cameraDistance = 1.15f;
+    [SerializeField] private float cameraDistance = 1.1f;
     [Tooltip("카메라 높이. 크면 위에서 내려다봅니다.")]
-    [SerializeField] private float cameraHeight = 0.3f;
-    [Tooltip("앞을 보는 정도. 크면 캐릭터가 화면 위로 밀려납니다.")]
-    [SerializeField] private float cameraLookAhead = 0.2f;
+    [SerializeField] private float cameraHeight = 0.55f;
+    [Tooltip("앞을 보는 정도. 크면 시선이 멀리 가서 캐릭터가 화면 아래쪽에 보입니다.")]
+    [SerializeField] private float cameraLookAhead = 4f;
     [Tooltip("시작할 때 위아래 각도.")]
     [SerializeField] private float cameraStartPitch = 12f;
     private const float CameraPitchScale = 0.22f;

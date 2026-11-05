@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Threading;
 using Fusion;
 using Fusion.Sockets;
 using UnityEngine;
@@ -69,6 +70,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
     const byte C2H_Ready = 3;
     const byte C2H_Pose = 4;
     const byte C2H_Hit = 5;
+    const byte C2H_Chat = 6;
     const byte H2C_Room = 20;
     const byte H2C_Start = 21;
     const byte H2C_LoadMap = 22;
@@ -76,6 +78,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
     const byte H2C_Phase = 24;
     const byte H2C_Poses = 25;
     const byte H2C_Hit = 26;
+    const byte H2C_Chat = 27;
 
     const int AiIdBase = 10000;
     /// <summary>테스트 봇 id (1000~): 사람 PlayerId 와 AI id 사이</summary>
@@ -128,8 +131,30 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
         SceneManager.sceneLoaded += OnUnitySceneLoaded;
     }
 
+    // 플레이 모드 종료 / 게임 종료 시 진행 중인 접속을 끊음 (안 끊으면 에디터 모드에서 접속이 이어져
+    // "DontDestroyOnLoad can only be used in play mode" 오류가 뜸)
+    readonly CancellationTokenSource quitCts = new CancellationTokenSource();
+    bool quitting;
+
+    void OnApplicationQuit()
+    {
+        StopAll();
+    }
+
+    void StopAll()
+    {
+        if (quitting)
+            return;
+        quitting = true;
+        quitCts.Cancel();
+        if (runner != null && !runner.IsShutdown)
+            runner.Shutdown();
+        runner = null;
+    }
+
     void OnDestroy()
     {
+        StopAll();
         SceneManager.sceneLoaded -= OnUnitySceneLoaded;
         if (Instance == this)
             Instance = null;
@@ -159,6 +184,8 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
     public async void ConnectLobby(string nick, Action<bool, string> done)
     {
+        if (quitting)
+            return;
         nickname = nick ?? "";
         if (inLobby || InRoom)
         {
@@ -167,7 +194,9 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
         }
 
         lobbyListReceived = false;
-        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer);
+        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
+        if (quitting)
+            return;
         if (!result.Ok)
         {
             inLobby = false;
@@ -191,10 +220,14 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
     async void RejoinLobby()
     {
+        if (quitting)
+            return;
         rooms.Clear();
         RoomsChanged?.Invoke();
         runner = null;
-        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer);
+        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
+        if (quitting)
+            return;
         inLobby = result.Ok;
         if (!result.Ok)
         {
@@ -264,7 +297,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
     public async void CreateRoom(RoomSettings settings)
     {
-        if (busy || InRoom)
+        if (busy || InRoom || quitting)
             return;
         busy = true;
         current = settings;
@@ -287,8 +320,11 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
             SessionProperties = props,
             SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
             IsOpen = true,
-            IsVisible = true
+            IsVisible = true,
+            StartGameCancellationToken = quitCts.Token
         });
+        if (quitting)
+            return;
         busy = false;
 
         if (!result.Ok)
@@ -300,6 +336,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
         inLobby = false;
         InRoom = true;
+        ChatLog.Clear();
         players.Clear();
         players.Add(new RoomPlayer { id = LocalPlayerId, nickname = nickname, team = RoomPlayer.TeamTickToy, ready = true, isHost = true, isLocal = true });
         RoomChanged?.Invoke();
@@ -334,7 +371,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
     async void Join(string roomName, string password)
     {
-        if (busy || InRoom)
+        if (busy || InRoom || quitting)
             return;
         busy = true;
 
@@ -344,8 +381,11 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
             GameMode = GameMode.Client,
             SessionName = roomName,
             ConnectionToken = Encoding.UTF8.GetBytes(password ?? ""),
-            SceneManager = r.GetComponent<NetworkSceneManagerDefault>()
+            SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
+            StartGameCancellationToken = quitCts.Token
         });
+        if (quitting)
+            return;
         busy = false;
 
         if (!result.Ok)
@@ -365,6 +405,7 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
 
         inLobby = false;
         InRoom = true;
+        ChatLog.Clear();
         current = new RoomSettings { roomName = roomName };
         players.Clear();
         SendToHost(Msg(C2H_Hello, w => w.Write(nickname)));
@@ -383,6 +424,8 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
         RoomChanged?.Invoke();
         await r.Shutdown();
         leaving = false;
+        if (quitting)
+            return;
         RejoinLobby();
     }
 
@@ -405,6 +448,13 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
             SceneManager.LoadScene(MatchService.LobbyScene);
         RoomChanged?.Invoke();
         StartCoroutine(ErrorLater("방과 연결이 끊어졌어요. (방장이 나갔을 수 있어요)"));
+        // 바로 새 러너를 만들면 Fusion 이 러너 목록을 도는 중(스크립트 재컴파일 등)에 목록이 바뀌어 오류 → 다음 프레임에
+        StartCoroutine(RejoinNextFrame());
+    }
+
+    IEnumerator RejoinNextFrame()
+    {
+        yield return null;
         RejoinLobby();
     }
 
@@ -753,6 +803,33 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
         return n;
     }
 
+    // ---------------- 채팅 ----------------
+
+    public void SendChat(string text)
+    {
+        if (!InRoom || string.IsNullOrEmpty(text))
+            return;
+        if (IsHost)
+            HostBroadcastChat(nickname, text);
+        else
+            SendToHost(Msg(C2H_Chat, w => w.Write(text)));
+    }
+
+    void HostBroadcastChat(string nick, string text)
+    {
+        text = text.Trim();
+        if (text.Length == 0)
+            return;
+        if (text.Length > 50)
+            text = text.Substring(0, 50);
+        SendToClients(Msg(H2C_Chat, w =>
+        {
+            w.Write(nick ?? "");
+            w.Write(text);
+        }));
+        ChatLog.Add(nick, text);
+    }
+
     /// <summary>내 와인더가 다른 사람(또는 방장 쪽 AI)의 퍼펫을 때림</summary>
     public void SendHit(NetPuppet target, int damage)
     {
@@ -1038,6 +1115,14 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
                     remotePoses[p.id] = p;
                 break;
             }
+            case C2H_Chat:
+            {
+                string text = rd.ReadString();
+                RoomPlayer p = players.Find(x => x.id == from.PlayerId);
+                if (p != null)
+                    HostBroadcastChat(p.nickname, text);
+                break;
+            }
             case C2H_Hit:
             {
                 int target = rd.ReadInt32();
@@ -1101,6 +1186,13 @@ public class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetworkRunnerCa
             case H2C_Hit:
                 RoundManager.Instance?.ApplyNetHit(rd.ReadInt32());
                 break;
+
+            case H2C_Chat:
+            {
+                string nick = rd.ReadString();
+                ChatLog.Add(nick, rd.ReadString());
+                break;
+            }
         }
     }
 

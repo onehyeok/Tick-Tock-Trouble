@@ -37,6 +37,8 @@ public interface IMatchBackend
     void LoadMap(string sceneName);
     /// <summary>모든 라운드 끝 → 방(로비 씬)으로 (방장만)</summary>
     void ReturnToRoom();
+    /// <summary>채팅 보내기 (방 / 게임 중) → 모두의 ChatLog 에 추가</summary>
+    void SendChat(string text);
 }
 
 public static class MatchService
@@ -105,8 +107,14 @@ public class OfflineMatchBackend : IMatchBackend
 
     public bool IsNicknameTaken(string nick) => false;
 
+    public void SendChat(string text)
+    {
+        ChatLog.Add(nickname, text);
+    }
+
     public void CreateRoom(RoomSettings settings)
     {
+        ChatLog.Clear();
         CurrentRoom = settings;
         InRoom = true;
         players.Clear();

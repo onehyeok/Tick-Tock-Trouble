@@ -12,7 +12,15 @@ public static class GameSettings
 
     public static float HorizontalSensitivity { get; private set; } = DefaultSensitivity;
     public static float VerticalSensitivity { get; private set; } = DefaultSensitivity;
-    public static bool MenuOpen { get; set; }
+    static bool menuOpen;
+    /// <summary>설정 메뉴가 열렸거나 채팅 입력 중이면 true → 캐릭터 조작 멈춤</summary>
+    public static bool MenuOpen
+    {
+        get => menuOpen || ChatTyping;
+        set => menuOpen = value;
+    }
+    /// <summary>게임 중 채팅 입력칸이 열려 있음</summary>
+    public static bool ChatTyping { get; set; }
 
     static bool loaded;
 

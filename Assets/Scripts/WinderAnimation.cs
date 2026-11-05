@@ -69,7 +69,7 @@ public class WinderAnimation : MonoBehaviour
     {
         if (move.IsFrozen)
         {
-            if (Input.GetKeyDown(KeyCode.K))
+            if (!GameSettings.MenuOpen && Input.GetKeyDown(KeyCode.K))
             {
                 move.IsDead = true;
                 animator.SetTrigger("Die");
@@ -95,7 +95,7 @@ public class WinderAnimation : MonoBehaviour
                 break;
         }
 
-        if (Input.GetKeyDown(KeyCode.K))
+        if (!GameSettings.MenuOpen && Input.GetKeyDown(KeyCode.K))
         {
             move.IsDead = true;
             animator.SetTrigger("Die");

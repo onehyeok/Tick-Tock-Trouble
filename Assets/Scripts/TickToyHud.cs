@@ -64,8 +64,8 @@ public class TickToyHud : MonoBehaviour
     void Awake()
     {
         TickToyMove.KeepOneAudioListener();
+        displayFont = UIKit.Font; // 글꼴은 씬에 이미 적용돼 있음 (실행 중에 바꾸지 않음)
         EnsureStopPrompt();
-        ApplyFont();
         StyleStatusUi();
         RefreshStatus();
 
@@ -94,18 +94,6 @@ public class TickToyHud : MonoBehaviour
         Sprite timerSprite = LoadTimerIconSprite();
         if (abilityTimerRoot == null)
             return;
-
-        // SampleScene과 동일 크기/위치 유지 (DemoScene이 작게 저장된 경우 보정)
-        RectTransform timerRt = abilityTimerRoot.GetComponent<RectTransform>();
-        if (timerRt != null)
-        {
-            timerRt.anchorMin = new Vector2(0.5f, 0.5f);
-            timerRt.anchorMax = new Vector2(0.5f, 0.5f);
-            timerRt.pivot = new Vector2(0.5f, 0.5f);
-            timerRt.anchoredPosition = new Vector2(0f, 288f);
-            timerRt.sizeDelta = new Vector2(300f, 300f);
-            timerRt.localScale = Vector3.one;
-        }
 
         // 아래: 밝은 Timer_Icon 전체 / 위: 같은 아이콘 어두운 Radial이 시계방향으로 덮음
         if (abilityTimerBase == null)
@@ -197,13 +185,15 @@ public class TickToyHud : MonoBehaviour
 
     void Update()
     {
-        UpdateAbilityTestKeys();
+        bool menuOpen = GameSettings.MenuOpen; // 설정 메뉴 / 채팅 입력 중엔 키 입력 무시
+        if (!menuOpen)
+            UpdateAbilityTestKeys();
         RefreshStopPrompt();
         TickDamageFlashUi();
-        if (stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
+        if (!menuOpen && stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
             GrantOrLevelFromStop();
 
-        if (abilityLevel > 0 && PressedAbilityKey())
+        if (!menuOpen && abilityLevel > 0 && PressedAbilityKey())
             ConsumeAbility();
 
         bool winding = abilityLevel < 3 && IsAnyTickToyWinding();
@@ -211,7 +201,9 @@ public class TickToyHud : MonoBehaviour
 
         if (winding)
         {
-            // 달리기/드러눕기 타이머는 유지한 채 태엽 바 표시
+            // 달리기/드러눕기 타이머는 유지한 채 태엽 바 표시 (시간이 끝났으면 시계는 숨김)
+            if (!showingAbilityTimer)
+                HideAbilityTimer();
             ShowWindGauge();
             return;
         }
@@ -298,14 +290,11 @@ public class TickToyHud : MonoBehaviour
         damagePopText = popGo.GetComponent<Text>();
         damagePopText.alignment = TextAnchor.MiddleCenter;
         damagePopText.fontSize = 42;
-        damagePopText.fontStyle = displayFont == UIKit.Font ? FontStyle.Normal : FontStyle.Bold;
+        damagePopText.fontStyle = FontStyle.Normal;
         damagePopText.raycastTarget = false;
         damagePopText.horizontalOverflow = HorizontalWrapMode.Overflow;
         damagePopText.verticalOverflow = VerticalWrapMode.Overflow;
-        if (displayFont != null)
-            damagePopText.font = displayFont;
-        else
-            ApplyDisplayFont(damagePopText, 42);
+        damagePopText.font = displayFont;
         damagePopBasePos = popRt.anchoredPosition;
         popGo.SetActive(false);
 
@@ -528,29 +517,52 @@ public class TickToyHud : MonoBehaviour
             timerBadge.localScale = Vector3.one;
     }
 
-    void ApplyFont()
+#if UNITY_EDITOR
+    /// <summary>
+    /// 에디터 전용: HUD 글꼴(Jua)·HP/Lv 스타일·능력 시계 위치를 씬에 직접 저장 → 실행해도 그대로, 게임 창에서도 미리 보임
+    /// </summary>
+    public void BakeInEditor()
     {
-        Font bodyFont = Font.CreateDynamicFontFromOSFont(new[] { "Malgun Gothic", "맑은 고딕" }, 32);
-        if (bodyFont == null)
-            bodyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-
-        // HP 숫자 · Lv 글씨: 게임 UI(로비/배지)와 같은 둥근 Jua 폰트
         displayFont = UIKit.Font;
-        if (displayFont == null)
-            displayFont = Font.CreateDynamicFontFromOSFont(new[] { "Arial Rounded MT Bold", "Arial Rounded MT", "Trebuchet MS" }, 48);
-        if (displayFont == null)
-            displayFont = bodyFont;
-
-        Text[] texts = GetComponentsInChildren<Text>(true);
-        for (int i = 0; i < texts.Length; i++)
+        Canvas canvas = countText != null && countText.canvas != null ? countText.canvas.rootCanvas : GetComponentInParent<Canvas>();
+        Transform root = canvas != null ? canvas.transform : transform;
+        foreach (Text t in root.GetComponentsInChildren<Text>(true))
         {
-            if (texts[i] == levelText || texts[i] == hpText || texts[i].font == UIKit.Font)
-                continue;
-
-            texts[i].font = bodyFont;
+            if (t != levelText && t != hpText)
+                t.font = UIKit.Font; // 태엽 감는 중 글씨 등 HUD 글자 전부
         }
-
         StyleHpAndLevel();
+        EnsureAbilityTimerVisual();
+        PlaceAbilityTimerUnderRound();
+
+        // 태엽 감는 중 아래 스크롤바 크기 줄임
+        if (windFill != null && windRoot != null && windFill.transform.parent != null && windFill.transform.parent != windRoot.transform)
+            windFill.transform.parent.localScale = new Vector3(0.7f, 0.7f, 1f);
+    }
+
+    /// <summary>능력 시계를 ROUND 배지 바로 아래에 (안 겹치게)</summary>
+    void PlaceAbilityTimerUnderRound()
+    {
+        if (abilityTimerRoot == null || roundValueText == null)
+            return;
+        RectTransform timerRt = abilityTimerRoot.GetComponent<RectTransform>();
+        RectTransform round = roundValueText.transform.parent as RectTransform;
+        RectTransform parent = timerRt != null ? timerRt.parent as RectTransform : null;
+        if (timerRt == null || round == null || parent == null)
+            return;
+
+        Vector3[] corners = new Vector3[4];
+        round.GetWorldCorners(corners);
+        float roundBottom = parent.InverseTransformPoint(corners[0]).y;
+        float fromTop = parent.rect.yMax - roundBottom;
+
+        // Timer_Icon 위쪽 투명 여백(약 51) 빼고 8 띄움
+        timerRt.anchorMin = new Vector2(0.5f, 1f);
+        timerRt.anchorMax = new Vector2(0.5f, 1f);
+        timerRt.pivot = new Vector2(0.5f, 1f);
+        timerRt.sizeDelta = new Vector2(300f, 300f);
+        timerRt.localScale = Vector3.one;
+        timerRt.anchoredPosition = new Vector2(0f, -(fromTop + 8f - 51f));
     }
 
     void StyleHpAndLevel()
@@ -598,6 +610,7 @@ public class TickToyHud : MonoBehaviour
         shadow.effectColor = new Color(0.18f, 0.08f, 0.02f, 0.55f);
         shadow.effectDistance = new Vector2(2f, -2f);
     }
+#endif
 
     // 매 프레임 씬 전체 검색하지 않도록 0.5초마다만 다시 찾음
     TickToyMove[] cachedToys = System.Array.Empty<TickToyMove>();
@@ -759,6 +772,7 @@ public class TickToyHud : MonoBehaviour
 
         stopPrompt = promptObject.GetComponent<Text>();
         stopPrompt.alignment = TextAnchor.MiddleCenter;
+        stopPrompt.font = UIKit.Font;
         stopPrompt.fontSize = 36;
         stopPrompt.color = Color.white;
         stopPrompt.horizontalOverflow = HorizontalWrapMode.Overflow;
