@@ -30,7 +30,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: -0.36, y: 0, z: 10.232}
-  m_LocalScale: {x: 0.54, y: 0.54, z: 0.54}
+  m_LocalScale: {x: 0.62, y: 0.62, z: 0.62}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6573371272821830060}
@@ -82,8 +82,8 @@ MonoBehaviour:
   cameraPivot: {fileID: 2162296121984053028}
   walkLipHeight: 0.45
   proneMoveSpeedMultiplier: 0.5
-  brickGoldWeaponPrefab: {fileID: 0}
-  trapPrefab: {fileID: 0}
+  brickGoldWeaponPrefab: {fileID: 919132149155446097, guid: 2d265bf30617c3d40a158f0534c8650c, type: 3}
+  trapPrefab: {fileID: 919132149155446097, guid: af3c8eb4a9c95e84e8aff6e6b3c63074, type: 3}
   fpsWeaponPosition: {x: 0.36, y: -0.13, z: 0.44}
   fpsWeaponRotation: {x: 4.8, y: 206.1, z: 328.2}
   fpsWeaponScale: 0.85
@@ -10141,7 +10141,7 @@ Transform:
   m_GameObject: {fileID: 8633534791596323720}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 2, z: 1.65}
+  m_LocalPosition: {x: 0, y: 1.742, z: 1.881}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -10166,7 +10166,7 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 0}
+  m_Size: {x: 0.871, y: 0.871, z: 0}
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!1001 &3347862966926899815
 PrefabInstance:

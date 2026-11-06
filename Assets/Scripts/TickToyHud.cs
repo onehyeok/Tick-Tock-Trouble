@@ -48,6 +48,7 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Text levelText;
 
     private float windProgress;
+    private bool windBlockedUntilRelease;
     private AbilityKind abilityKind;
     private int abilityLevel;
     private Text windLabel;
@@ -197,6 +198,14 @@ public class TickToyHud : MonoBehaviour
             ConsumeAbility();
 
         bool winding = abilityLevel < 3 && IsAnyTickToyWinding();
+        // 문이 열리기 전: 태엽 감는 동작만 되고 바는 안 뜸.
+        // 감는 중에 문이 열려도 바로 바가 뜨지 않음 → 좌클릭을 뗐다가 다시 눌러야 뜸
+        if (winding && !RoundManager.DoorOpen)
+            windBlockedUntilRelease = true;
+        else if (!winding)
+            windBlockedUntilRelease = false;
+        if (windBlockedUntilRelease)
+            winding = false;
         bool showingAbilityTimer = ShowUsingGauge();
 
         if (winding)
@@ -548,101 +557,6 @@ public class TickToyHud : MonoBehaviour
             timerBadge.localScale = Vector3.one;
     }
 
-#if UNITY_EDITOR
-    /// <summary>
-    /// 에디터 전용: HUD 글꼴(Jua)·HP/Lv 스타일·능력 시계 위치를 씬에 직접 저장 → 실행해도 그대로, 게임 창에서도 미리 보임
-    /// </summary>
-    public void BakeInEditor()
-    {
-        displayFont = UIKit.Font;
-        Canvas canvas = countText != null && countText.canvas != null ? countText.canvas.rootCanvas : GetComponentInParent<Canvas>();
-        Transform root = canvas != null ? canvas.transform : transform;
-        foreach (Text t in root.GetComponentsInChildren<Text>(true))
-        {
-            if (t != levelText && t != hpText)
-                t.font = UIKit.Font; // 태엽 감는 중 글씨 등 HUD 글자 전부
-        }
-        StyleHpAndLevel();
-        EnsureAbilityTimerVisual();
-        PlaceAbilityTimerUnderRound();
-
-        // 태엽 감는 중 아래 스크롤바 크기 줄임
-        if (windFill != null && windRoot != null && windFill.transform.parent != null && windFill.transform.parent != windRoot.transform)
-            windFill.transform.parent.localScale = new Vector3(0.7f, 0.7f, 1f);
-    }
-
-    /// <summary>능력 시계를 ROUND 배지 바로 아래에 (안 겹치게)</summary>
-    void PlaceAbilityTimerUnderRound()
-    {
-        if (abilityTimerRoot == null || roundValueText == null)
-            return;
-        RectTransform timerRt = abilityTimerRoot.GetComponent<RectTransform>();
-        RectTransform round = roundValueText.transform.parent as RectTransform;
-        RectTransform parent = timerRt != null ? timerRt.parent as RectTransform : null;
-        if (timerRt == null || round == null || parent == null)
-            return;
-
-        Vector3[] corners = new Vector3[4];
-        round.GetWorldCorners(corners);
-        float roundBottom = parent.InverseTransformPoint(corners[0]).y;
-        float fromTop = parent.rect.yMax - roundBottom;
-
-        // Timer_Icon 위쪽 투명 여백(약 51) 빼고 8 띄움
-        timerRt.anchorMin = new Vector2(0.5f, 1f);
-        timerRt.anchorMax = new Vector2(0.5f, 1f);
-        timerRt.pivot = new Vector2(0.5f, 1f);
-        timerRt.sizeDelta = new Vector2(300f, 300f);
-        timerRt.localScale = Vector3.one;
-        timerRt.anchoredPosition = new Vector2(0f, -(fromTop + 8f - 51f));
-    }
-
-    void StyleHpAndLevel()
-    {
-        // Lv: 흰/파랑/빨강 글씨 + 진한 갈색 테두리
-        ApplyDisplayFont(levelText, 54);
-        AddTextOutline(levelText, new Color(0.30f, 0.16f, 0.07f, 1f), 3f);
-        // HP 숫자: 갈색 글씨 + 크림색 테두리 (배지 숫자와 같은 느낌)
-        if (hpText != null)
-        {
-            ApplyDisplayFont(hpText, hpText.fontSize);
-            hpText.color = new Color(0.45f, 0.22f, 0.08f, 1f);
-            AddTextOutline(hpText, new Color(1f, 0.96f, 0.88f, 1f), 2.5f);
-        }
-    }
-
-    static void AddTextOutline(Text text, Color color, float size)
-    {
-        if (text == null)
-            return;
-        Outline outline = null;
-        foreach (Outline o in text.GetComponents<Outline>())
-            outline = o;
-        if (outline == null)
-            outline = text.gameObject.AddComponent<Outline>();
-        outline.effectColor = color;
-        outline.effectDistance = new Vector2(size, -size);
-    }
-
-    void ApplyDisplayFont(Text text, int size)
-    {
-        if (text == null)
-            return;
-
-        text.font = displayFont;
-        text.fontSize = size;
-        text.fontStyle = FontStyle.Normal; // Jua 는 원래 굵어서 가짜 Bold 안 씀
-
-        Shadow shadow = null;
-        foreach (Shadow sh in text.GetComponents<Shadow>())
-            if (!(sh is Outline)) { shadow = sh; break; }
-        if (shadow == null)
-            shadow = text.gameObject.AddComponent<Shadow>();
-
-        shadow.effectColor = new Color(0.18f, 0.08f, 0.02f, 0.55f);
-        shadow.effectDistance = new Vector2(2f, -2f);
-    }
-#endif
-
     // 매 프레임 씬 전체 검색하지 않도록 0.5초마다만 다시 찾음
     TickToyMove[] cachedToys = System.Array.Empty<TickToyMove>();
     WinderMove[] cachedWinders = System.Array.Empty<WinderMove>();
@@ -827,7 +741,7 @@ public class TickToyHud : MonoBehaviour
         {
             if (toys[i] == null || !toys[i].enabled || toys[i].IsDead)
                 continue;
-            if (toys[i].FindWinderInReach() != null)
+            if (toys[i].FindWinderInReach() != null || toys[i].FindWinderPuppetInReach() != null)
                 return true;
         }
 

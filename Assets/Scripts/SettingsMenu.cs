@@ -1,20 +1,20 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
 #endif
 
-/// <summary>ESC 설정창. 좌우/수직 마우스 감도 슬라이더 + 숫자 입력.</summary>
+/// <summary>ESC 설정창. 좌우 마우스 감도 슬라이더 + 숫자 입력, 게임 중엔 "로비로 나가기" 버튼.</summary>
 public class SettingsMenu : MonoBehaviour
 {
     static SettingsMenu instance;
 
     GameObject root;
     Slider horizontalSlider;
-    Slider verticalSlider;
     InputField horizontalInput;
-    InputField verticalInput;
+    GameObject exitButton;
     bool syncing;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -48,11 +48,20 @@ public class SettingsMenu : MonoBehaviour
             SetOpen(!GameSettings.MenuOpen);
     }
 
+    /// <summary>인트로·로비(방 목록/방 화면)에선 마우스를 잠그지 않고 나가기 버튼도 숨김</summary>
+    static bool InMenuScene()
+    {
+        string scene = SceneManager.GetActiveScene().name;
+        return scene == MatchService.IntroScene || scene == MatchService.LobbyScene;
+    }
+
     void SetOpen(bool open)
     {
         GameSettings.MenuOpen = open;
         if (root != null)
             root.SetActive(open);
+        if (exitButton != null)
+            exitButton.SetActive(!InMenuScene());
 
         if (open)
         {
@@ -60,11 +69,27 @@ public class SettingsMenu : MonoBehaviour
             Cursor.visible = true;
             Cursor.lockState = CursorLockMode.None;
         }
-        else
+        else if (!InMenuScene())
         {
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
         }
+    }
+
+    /// <summary>게임을 그만두고 로비(방 목록)로</summary>
+    void ExitToLobby()
+    {
+        GameSettings.MenuOpen = false;
+        if (root != null)
+            root.SetActive(false);
+        MatchContext.Active = false;
+        MatchContext.ReturnToRoom = false;
+        IMatchBackend backend = MatchService.Backend;
+        if (backend.InRoom)
+            backend.LeaveRoom();
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+        SceneManager.LoadScene(MatchService.LobbyScene);
     }
 
     void RefreshFromSettings()
@@ -72,12 +97,8 @@ public class SettingsMenu : MonoBehaviour
         syncing = true;
         if (horizontalSlider != null)
             horizontalSlider.value = GameSettings.HorizontalSensitivity;
-        if (verticalSlider != null)
-            verticalSlider.value = GameSettings.VerticalSensitivity;
         if (horizontalInput != null)
             horizontalInput.text = Mathf.RoundToInt(GameSettings.HorizontalSensitivity).ToString();
-        if (verticalInput != null)
-            verticalInput.text = Mathf.RoundToInt(GameSettings.VerticalSensitivity).ToString();
         syncing = false;
     }
 
@@ -96,220 +117,106 @@ public class SettingsMenu : MonoBehaviour
 #endif
     }
 
+    // ---------------- 화면 (게임 UI 와 같은 Jua 글꼴 · 크림/주황 장난감 스타일) ----------------
+
     void BuildUi()
     {
-        Font font = Font.CreateDynamicFontFromOSFont(new[] { "Malgun Gothic", "맑은 고딕" }, 28);
-        if (font == null)
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        Canvas canvas = UIKit.Canvas("SettingsCanvas", 500);
+        canvas.transform.SetParent(transform, false);
 
-        GameObject canvasGo = new GameObject("SettingsCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        canvasGo.transform.SetParent(transform, false);
-        Canvas canvas = canvasGo.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 500;
-        CanvasScaler scaler = canvasGo.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-
-        root = new GameObject("SettingsRoot", typeof(RectTransform), typeof(Image));
-        root.transform.SetParent(canvasGo.transform, false);
-        RectTransform rootRt = root.GetComponent<RectTransform>();
-        StretchFull(rootRt);
-        Image dim = root.GetComponent<Image>();
-        dim.color = new Color(0f, 0f, 0f, 0.55f);
+        // 뒤 어둡게
+        Image dim = UIKit.Panel(canvas.transform, "SettingsRoot", new Color(0.12f, 0.07f, 0.04f, 0.6f), false);
+        dim.rectTransform.Fill();
         dim.raycastTarget = true;
+        root = dim.gameObject;
 
-        GameObject panel = new GameObject("Panel", typeof(RectTransform), typeof(Image));
-        panel.transform.SetParent(root.transform, false);
-        RectTransform panelRt = panel.GetComponent<RectTransform>();
-        panelRt.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRt.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRt.pivot = new Vector2(0.5f, 0.5f);
-        panelRt.sizeDelta = new Vector2(620f, 320f);
-        Image panelImg = panel.GetComponent<Image>();
-        panelImg.color = new Color(0.12f, 0.14f, 0.18f, 0.96f);
+        // 주황 테두리 + 크림 판
+        Image border = UIKit.Panel(root.transform, "Panel", UIKit.Orange, false);
+        border.rectTransform.At(new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 360f));
+        Shadow shadow = border.gameObject.AddComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.3f);
+        shadow.effectDistance = new Vector2(0f, -10f);
+        Transform panel = UIKit.Panel(border.transform, "Inner", UIKit.Cream, false).rectTransform.Fill(8f, 8f, 8f, 8f);
 
-        Text title = CreateText(panel.transform, "Title", "설정", font, 36, TextAnchor.MiddleCenter);
-        RectTransform titleRt = title.rectTransform;
-        titleRt.anchorMin = new Vector2(0f, 1f);
-        titleRt.anchorMax = new Vector2(1f, 1f);
-        titleRt.pivot = new Vector2(0.5f, 1f);
-        titleRt.anchoredPosition = new Vector2(0f, -18f);
-        titleRt.sizeDelta = new Vector2(-40f, 48f);
+        Text title = UIKit.Label(panel, "Title", "설정", 48, UIKit.Orange).Outlined(UIKit.Brown, 3f);
+        title.rectTransform.At(new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(560f, 64f));
 
-        BuildSensitivityRow(panel.transform, font, "좌우 감도", 70f, true);
-        BuildSensitivityRow(panel.transform, font, "수직 감도", 150f, false);
+        BuildSensitivityRow(panel, "좌우 감도", -110f);
 
-        Text hint = CreateText(panel.transform, "Hint", "ESC로 닫기", font, 22, TextAnchor.MiddleCenter);
-        RectTransform hintRt = hint.rectTransform;
-        hintRt.anchorMin = new Vector2(0f, 0f);
-        hintRt.anchorMax = new Vector2(1f, 0f);
-        hintRt.pivot = new Vector2(0.5f, 0f);
-        hintRt.anchoredPosition = new Vector2(0f, 18f);
-        hintRt.sizeDelta = new Vector2(-40f, 36f);
-        hint.color = new Color(0.75f, 0.78f, 0.82f, 1f);
+        Button exit = UIKit.Button(panel, "ExitToLobbyButton", "로비로 나가기", UIKit.Orange, Color.white, 34);
+        exit.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
+        exit.GetComponent<RectTransform>().At(new Vector2(0.5f, 1f), new Vector2(0f, -200f), new Vector2(320f, 70f));
+        exit.onClick.AddListener(ExitToLobby);
+        exitButton = exit.gameObject;
+
+        Text hint = UIKit.Label(panel, "Hint", "ESC 로 닫기", 24, new Color(0.36f, 0.22f, 0.13f, 0.7f));
+        hint.rectTransform.At(new Vector2(0.5f, 0f), new Vector2(0f, 14f), new Vector2(560f, 36f));
     }
 
-    void BuildSensitivityRow(Transform parent, Font font, string label, float yFromTop, bool horizontal)
+    void BuildSensitivityRow(Transform parent, string label, float y)
     {
-        GameObject row = new GameObject(label + "Row", typeof(RectTransform));
-        row.transform.SetParent(parent, false);
-        RectTransform rowRt = row.GetComponent<RectTransform>();
-        rowRt.anchorMin = new Vector2(0f, 1f);
-        rowRt.anchorMax = new Vector2(1f, 1f);
-        rowRt.pivot = new Vector2(0.5f, 1f);
-        rowRt.anchoredPosition = new Vector2(0f, -yFromTop);
-        rowRt.sizeDelta = new Vector2(-40f, 56f);
+        RectTransform row = UIKit.Rect(parent, label + "Row").At(new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(560f, 56f));
 
-        Text labelText = CreateText(row.transform, "Label", label, font, 26, TextAnchor.MiddleLeft);
-        RectTransform labelRt = labelText.rectTransform;
-        labelRt.anchorMin = new Vector2(0f, 0f);
-        labelRt.anchorMax = new Vector2(0f, 1f);
-        labelRt.pivot = new Vector2(0f, 0.5f);
-        labelRt.anchoredPosition = new Vector2(8f, 0f);
-        labelRt.sizeDelta = new Vector2(130f, 0f);
+        Text labelText = UIKit.Label(row, "Label", label, 30, UIKit.Brown, TextAnchor.MiddleLeft);
+        labelText.rectTransform.At(new Vector2(0f, 0.5f), Vector2.zero, new Vector2(140f, 56f));
 
-        GameObject sliderGo = new GameObject("Slider", typeof(RectTransform), typeof(Slider));
-        sliderGo.transform.SetParent(row.transform, false);
-        RectTransform sliderRt = sliderGo.GetComponent<RectTransform>();
-        sliderRt.anchorMin = new Vector2(0f, 0.5f);
-        sliderRt.anchorMax = new Vector2(1f, 0.5f);
-        sliderRt.pivot = new Vector2(0.5f, 0.5f);
-        sliderRt.anchoredPosition = new Vector2(20f, 0f);
-        sliderRt.sizeDelta = new Vector2(-280f, 28f);
-        sliderRt.offsetMin = new Vector2(150f, -14f);
-        sliderRt.offsetMax = new Vector2(-120f, 14f);
+        // 슬라이더: 연한 바탕 + 주황 채움 + 갈색 손잡이
+        RectTransform sliderRt = UIKit.Rect(row, "Slider").At(new Vector2(0f, 0.5f), new Vector2(150f, 0f), new Vector2(290f, 22f));
+        Slider slider = sliderRt.gameObject.AddComponent<Slider>();
+        UIKit.Panel(sliderRt, "Background", UIKit.CreamDark, false).rectTransform.Fill();
+        RectTransform fillArea = UIKit.Rect(sliderRt, "Fill Area").Fill();
+        Image fill = UIKit.Panel(fillArea, "Fill", UIKit.Orange, false);
+        fill.rectTransform.Fill();
+        RectTransform handleArea = UIKit.Rect(sliderRt, "Handle Slide Area").Fill();
+        Image handle = UIKit.Panel(handleArea, "Handle", UIKit.Brown, false);
+        handle.rectTransform.sizeDelta = new Vector2(20f, 36f);
 
-        Image track = CreateImage(sliderGo.transform, "Background", new Color(0.25f, 0.28f, 0.32f, 1f));
-        StretchFull(track.rectTransform);
+        slider.targetGraphic = handle;
+        slider.fillRect = fill.rectTransform;
+        slider.handleRect = handle.rectTransform;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = GameSettings.MinSensitivity;
+        slider.maxValue = GameSettings.MaxSensitivity;
+        slider.wholeNumbers = true;
+        slider.value = GameSettings.HorizontalSensitivity;
 
-        Image fillArea = CreateImage(sliderGo.transform, "Fill Area", new Color(0f, 0f, 0f, 0f));
-        StretchFull(fillArea.rectTransform);
-        fillArea.raycastTarget = false;
-        Image fill = CreateImage(fillArea.transform, "Fill", new Color(0.35f, 0.7f, 1f, 1f));
-        StretchFull(fill.rectTransform);
+        // 숫자 입력칸 (흰 바탕 · 갈색 글자)
+        InputField input = UIKit.Input(row, "ValueInput", "0", 28);
+        input.GetComponent<RectTransform>().At(new Vector2(1f, 0.5f), Vector2.zero, new Vector2(100f, 50f));
+        input.textComponent.alignment = TextAnchor.MiddleCenter;
+        ((Text)input.placeholder).alignment = TextAnchor.MiddleCenter;
+        input.textComponent.rectTransform.Fill(6f, 2f, 6f, 2f);
+        input.placeholder.rectTransform.Fill(6f, 2f, 6f, 2f);
+        input.contentType = InputField.ContentType.IntegerNumber;
+        input.characterLimit = 4;
+        input.text = Mathf.RoundToInt(slider.value).ToString();
 
-        GameObject handleArea = new GameObject("Handle Slide Area", typeof(RectTransform));
-        handleArea.transform.SetParent(sliderGo.transform, false);
-        StretchFull(handleArea.GetComponent<RectTransform>());
-        Image handle = CreateImage(handleArea.transform, "Handle", new Color(0.95f, 0.95f, 0.98f, 1f));
-        RectTransform handleRt = handle.rectTransform;
-        handleRt.sizeDelta = new Vector2(22f, 28f);
-
-        Slider builtSlider = sliderGo.GetComponent<Slider>();
-        builtSlider.targetGraphic = handle;
-        builtSlider.fillRect = fill.rectTransform;
-        builtSlider.handleRect = handleRt;
-        builtSlider.direction = Slider.Direction.LeftToRight;
-        builtSlider.minValue = GameSettings.MinSensitivity;
-        builtSlider.maxValue = GameSettings.MaxSensitivity;
-        builtSlider.wholeNumbers = true;
-        builtSlider.value = horizontal ? GameSettings.HorizontalSensitivity : GameSettings.VerticalSensitivity;
-
-        GameObject inputGo = new GameObject("ValueInput", typeof(RectTransform), typeof(Image), typeof(InputField));
-        inputGo.transform.SetParent(row.transform, false);
-        RectTransform inputRt = inputGo.GetComponent<RectTransform>();
-        inputRt.anchorMin = new Vector2(1f, 0.5f);
-        inputRt.anchorMax = new Vector2(1f, 0.5f);
-        inputRt.pivot = new Vector2(1f, 0.5f);
-        inputRt.anchoredPosition = new Vector2(-8f, 0f);
-        inputRt.sizeDelta = new Vector2(96f, 40f);
-        Image inputBg = inputGo.GetComponent<Image>();
-        inputBg.color = new Color(0.2f, 0.22f, 0.26f, 1f);
-
-        Text placeholder = CreateText(inputGo.transform, "Placeholder", "0", font, 24, TextAnchor.MiddleCenter);
-        placeholder.color = new Color(1f, 1f, 1f, 0.35f);
-        StretchFull(placeholder.rectTransform);
-        placeholder.raycastTarget = false;
-
-        Text inputText = CreateText(inputGo.transform, "Text", "", font, 24, TextAnchor.MiddleCenter);
-        StretchFull(inputText.rectTransform);
-        inputText.supportRichText = false;
-        RectTransform textRt = inputText.rectTransform;
-        textRt.offsetMin = new Vector2(6f, 2f);
-        textRt.offsetMax = new Vector2(-6f, -2f);
-
-        InputField builtInput = inputGo.GetComponent<InputField>();
-        builtInput.textComponent = inputText;
-        builtInput.placeholder = placeholder;
-        builtInput.contentType = InputField.ContentType.IntegerNumber;
-        builtInput.characterLimit = 4;
-        builtInput.text = Mathf.RoundToInt(builtSlider.value).ToString();
-
-        bool isHorizontal = horizontal;
-        builtSlider.onValueChanged.AddListener(value =>
+        slider.onValueChanged.AddListener(value =>
         {
             if (syncing)
                 return;
             syncing = true;
             int rounded = Mathf.RoundToInt(value);
-            builtInput.text = rounded.ToString();
-            if (isHorizontal)
-                GameSettings.SetHorizontalSensitivity(rounded);
-            else
-                GameSettings.SetVerticalSensitivity(rounded);
+            input.text = rounded.ToString();
+            GameSettings.SetHorizontalSensitivity(rounded);
             syncing = false;
         });
 
-        builtInput.onEndEdit.AddListener(text =>
+        input.onEndEdit.AddListener(text =>
         {
             if (syncing)
                 return;
             if (!int.TryParse(text, out int parsed))
-                parsed = Mathf.RoundToInt(builtSlider.value);
+                parsed = Mathf.RoundToInt(slider.value);
             parsed = Mathf.Clamp(parsed, (int)GameSettings.MinSensitivity, (int)GameSettings.MaxSensitivity);
             syncing = true;
-            builtSlider.value = parsed;
-            builtInput.text = parsed.ToString();
-            if (isHorizontal)
-                GameSettings.SetHorizontalSensitivity(parsed);
-            else
-                GameSettings.SetVerticalSensitivity(parsed);
+            slider.value = parsed;
+            input.text = parsed.ToString();
+            GameSettings.SetHorizontalSensitivity(parsed);
             syncing = false;
         });
 
-        if (horizontal)
-        {
-            horizontalSlider = builtSlider;
-            horizontalInput = builtInput;
-        }
-        else
-        {
-            verticalSlider = builtSlider;
-            verticalInput = builtInput;
-        }
-    }
-
-    static Text CreateText(Transform parent, string name, string content, Font font, int size, TextAnchor align)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
-        go.transform.SetParent(parent, false);
-        Text text = go.GetComponent<Text>();
-        text.font = font;
-        text.fontSize = size;
-        text.alignment = align;
-        text.color = Color.white;
-        text.horizontalOverflow = HorizontalWrapMode.Overflow;
-        text.verticalOverflow = VerticalWrapMode.Overflow;
-        text.raycastTarget = false;
-        text.text = content;
-        return text;
-    }
-
-    static Image CreateImage(Transform parent, string name, Color color)
-    {
-        GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image));
-        go.transform.SetParent(parent, false);
-        Image image = go.GetComponent<Image>();
-        image.color = color;
-        return image;
-    }
-
-    static void StretchFull(RectTransform rt)
-    {
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
+        horizontalSlider = slider;
+        horizontalInput = input;
     }
 }

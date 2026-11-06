@@ -22,6 +22,9 @@ public class RoundManager : MonoBehaviour
 
     public static RoundManager Instance { get; private set; }
 
+    /// <summary>와인더 방 문이 열렸는지 (숨는 시간 끝). 문이 열려야 태엽으로 능력을 얻음. 라운드 진행이 없는 씬은 항상 열림</summary>
+    public static bool DoorOpen => Instance == null || Instance.phase != Phase.Hide;
+
     static bool hooked;
 
     Phase phase;
@@ -39,6 +42,28 @@ public class RoundManager : MonoBehaviour
     public bool LocalIsWinderRole => localWinder != null;
     public int LocalCharIndex { get; private set; }
     public bool LocalAlive => localWinder != null ? !localWinder.IsDead : (localTickToy != null && !localTickToy.IsDead);
+
+    /// <summary>내 캐릭터 상태 깃발 (다른 사람 화면에 똑같이 보이게: 정지·달리기·황금 몽둥이·덫)</summary>
+    public int LocalFlags
+    {
+        get
+        {
+            int f = 0;
+            if (localWinder != null)
+            {
+                if (localWinder.IsFrozen) f |= NetPose.FlagFrozen;
+                if (localWinder.RunTimeLeft > 0f) f |= NetPose.FlagRunning;
+                if (localWinder.IsGoldenClub) f |= NetPose.FlagGolden;
+            }
+            else if (localTickToy != null)
+            {
+                if (localTickToy.State == TickToyMove.TickToyState.Run) f |= NetPose.FlagRunning;
+                if (localTickToy.IsTrapFrozen) f |= NetPose.FlagTrapped;
+                if (localTickToy.HitFaceActive) f |= NetPose.FlagHitFace;
+            }
+            return f;
+        }
+    }
     public int PhaseIndex => (int)phase;
     public float PhaseLeft => phaseLeft;
     public bool ResultWinderWon => resultWinderWon;
@@ -506,6 +531,9 @@ public class RoundManager : MonoBehaviour
 
     void Update()
     {
+        UpdateSpectate();
+        if (aborted)
+            return;
         phaseLeft -= Time.deltaTime;
 
         switch (phase)
@@ -602,6 +630,88 @@ public class RoundManager : MonoBehaviour
     }
 
     /// <summary>(온라인) 다른 사람의 와인더에게 맞음</summary>
+    /// <summary>(온라인) 틱토이가 내 와인더 등 뒤에서 E → 태엽 정지</summary>
+    public void ApplyWinderStop(float seconds)
+    {
+        if (localWinder != null && !localWinder.IsDead)
+            localWinder.Freeze(seconds);
+    }
+
+    // ---------------- 관전 (죽은 틱토이 → 살아있는 다른 틱토이 플레이어 화면) ----------------
+    int spectateId;
+    readonly List<NetCharacter> spectateCandidates = new List<NetCharacter>();
+    SpectatorBadge spectatorBadge;
+
+    /// <summary>내가 관전 중인 틱토이 플레이어 id (0 = 안 봄). 와인더는 관전하지 않음</summary>
+    public int SpectateTargetId => spectateId;
+
+    void UpdateSpectate()
+    {
+        FusionMatchBackend online = FusionMatchBackend.Online;
+        bool canSpectate = online != null && localTickToy != null && localTickToy.IsDead;
+        NetCharacter target = null;
+        if (canSpectate)
+        {
+            spectateCandidates.Clear();
+            foreach (NetCharacter nc in NetCharacter.Players.Values)
+            {
+                if (nc != null && nc.NetId != online.LocalPlayerId && nc.Kind == NetPose.KindTickToy && nc.Alive
+                    && nc.Puppet != null && nc.Puppet.gameObject.activeInHierarchy)
+                    spectateCandidates.Add(nc);
+            }
+            spectateCandidates.Sort((a, b) => a.NetId.CompareTo(b.NetId));
+
+            int index = spectateCandidates.FindIndex(nc => nc.NetId == spectateId);
+            if (index < 0 && spectateCandidates.Count > 0)
+                index = 0; // 보던 사람이 죽거나 나가면 다음 사람
+            // 좌클릭: 다음 사람 보기
+            if (index >= 0 && spectateCandidates.Count > 1 && !GameSettings.MenuOpen && Input.GetMouseButtonDown(0))
+                index = (index + 1) % spectateCandidates.Count;
+            if (index >= 0)
+                target = spectateCandidates[index];
+        }
+
+        spectateId = target != null ? target.NetId : 0;
+        if (localTickToy != null)
+            localTickToy.SpectateTarget = target != null ? target.Puppet.transform : null;
+
+        // 왼쪽 위 눈동자 표시: 살아있는 내 틱토이를 보는 사람 수 / 내가 관전 중인 사람을 보는 사람 수
+        if (spectatorBadge == null)
+            spectatorBadge = FindAnyObjectByType<SpectatorBadge>(FindObjectsInactive.Include);
+        if (spectatorBadge != null)
+        {
+            int shownId = 0;
+            if (online != null)
+            {
+                if (spectateId != 0)
+                    shownId = spectateId;
+                else if (localTickToy != null && !localTickToy.IsDead)
+                    shownId = online.LocalPlayerId;
+            }
+            spectatorBadge.SetCount(NetCharacter.SpectatorCount(shownId));
+        }
+    }
+
+    // ---------------- 게임 중단 (상대가 나감 / 방장이 나감) ----------------
+    bool aborted;
+
+    /// <summary>게임을 멈추고 가운데 띠에 안내 → 잠시 뒤 방으로 (방으로 이동은 호출한 쪽이 처리)</summary>
+    public void ShowMatchAbort(string message)
+    {
+        aborted = true;
+        phase = Phase.Result;
+        bannerRoot.SetActive(false);
+        countdownText.text = "";
+        resultRoot.SetActive(true);
+        resultTitle.text = "게임 종료";
+        resultTitle.color = UIKit.Orange;
+        resultSub.text = message + "  잠시 후 방으로 돌아갑니다";
+        resultBand.localScale = Vector3.one;
+        resultTitle.rectTransform.localScale = Vector3.one;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
     public void ApplyNetHit(int damage)
     {
         if (localTickToy != null && !localTickToy.IsDead)

@@ -34,6 +34,7 @@ public class TickToyAnimation : MonoBehaviour
     private bool isEmoting;
     private bool emoteKeepLocomotion; // Greeting만 true
     private float emoteEndTime;
+    private bool emoteLengthKnown; // 빌드에선 클립 파일을 못 읽음 → 애니메이터에서 실제 길이를 읽어 옴
     private int emoteUpperLayer = -1;
     private int emoteFullLayer = -1;
 
@@ -96,13 +97,24 @@ public class TickToyAnimation : MonoBehaviour
         currentFace = key;
     }
 
+    // 브릭에게 맞았을 때 잠깐 @@ 표정
+    const float HitFaceSeconds = 0.8f;
+    float hitFaceUntil;
+
+    public bool HitFaceActive => Time.time < hitFaceUntil;
+
+    public void ShowHitFace()
+    {
+        hitFaceUntil = Time.time + HitFaceSeconds;
+    }
+
     /// <summary>X·C 댄스 중: > < 와 o 표정을 번갈아, 기절한 척·사망: @@, 그 외: 기본 얼굴</summary>
     void UpdateFace()
     {
         if (faces.Count == 0 || move == null)
             return;
         string want = "Default";
-        if (move.IsDead || move.IsFainted)
+        if (move.IsDead || move.IsFainted || HitFaceActive)
             want = "Dizzy";
         else if (isEmoting && (currentEmote == "Dance1" || currentEmote == "Dance2"))
             want = ((int)((Time.time - emoteStartTime) / Mathf.Max(0.1f, danceFaceSwitchInterval)) % 2 == 0) ? "Happy" : "Surprised";
@@ -145,6 +157,8 @@ public class TickToyAnimation : MonoBehaviour
                 return;
         }
 
+        if (isEmoting && !emoteLengthKnown)
+            ReadEmoteLengthFromAnimator();
         if (isEmoting && Time.time >= emoteEndTime)
             StopEmote();
 
@@ -174,7 +188,9 @@ public class TickToyAnimation : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.E))
         {
             WinderMove winder = move.FindWinderInReach();
-            if (winder == null)
+            // 온라인: 다른 사람이 조작하는 와인더 → 그 사람 화면에서 멈추도록 방장을 거쳐 전달
+            NetPuppet remoteWinder = winder == null ? move.FindWinderPuppetInReach() : null;
+            if (winder == null && remoteWinder == null)
                 return;
 
             int windLayer = animator.GetLayerIndex("Wind Layer");
@@ -182,10 +198,11 @@ public class TickToyAnimation : MonoBehaviour
                 animator.CrossFadeInFixedTime("WindPause", 0.05f, windLayer, 0f);
             else
                 animator.SetTrigger("WindPause");
-            winder.Freeze(5f);
-            TickToyHud hud = FindAnyObjectByType<TickToyHud>();
-            if (hud != null)
-                hud.ShowWinderStoppedNotice();
+            if (winder != null)
+                winder.Freeze(5f);
+            else
+                FusionMatchBackend.Online?.SendWinderStop(remoteWinder.NetId);
+            // "틱토이가 태엽을 정지시켰어요!" 안내는 와인더 화면에만 (FusionMatchBackend.ApplyGameEvent)
         }
     }
 
@@ -628,9 +645,25 @@ public class TickToyAnimation : MonoBehaviour
         emoteKeepLocomotion = upperBodyOnly;
         float len = clip != null ? clip.length : 2f;
         emoteEndTime = Time.time + Mathf.Max(0.2f, len);
+        emoteLengthKnown = clip != null;
         animator.SetBool("IsWinding", false);
         move.IsWinding = false;
         SetSpineSpringsActive(false);
+    }
+
+    /// <summary>감정표현 상태가 시작되면 그 애니메이션의 실제 길이로 끝나는 시간을 맞춤</summary>
+    void ReadEmoteLengthFromAnimator()
+    {
+        int layer = emoteKeepLocomotion ? emoteUpperLayer : emoteFullLayer;
+        if (layer < 0 || string.IsNullOrEmpty(currentEmote))
+            return;
+        AnimatorStateInfo info = animator.IsInTransition(layer)
+            ? animator.GetNextAnimatorStateInfo(layer)
+            : animator.GetCurrentAnimatorStateInfo(layer);
+        if (info.shortNameHash != Animator.StringToHash(currentEmote) || info.length < 0.05f)
+            return;
+        emoteEndTime = emoteStartTime + info.length;
+        emoteLengthKnown = true;
     }
 
     void StopEmote()

@@ -15,6 +15,8 @@ public class TickToyMove : MonoBehaviour
 
     public Vector2 MoveInput { get; private set; }
     public bool IsWinding { get; set; }
+    /// <summary>죽은 뒤 관전 중인 틱토이 (카메라가 따라감, null = 내 몸)</summary>
+    public Transform SpectateTarget { get; set; }
     public TickToyState State { get; private set; } = TickToyState.Play;
 
     [Header("TPS Camera")]
@@ -100,69 +102,103 @@ public class TickToyMove : MonoBehaviour
     private float trapFreezeLeft;
     private bool trapHeldBody;
 
+    const float WinderReach = 2.4f;
+
     public WinderMove FindWinderInReach()
     {
-        if (IsFainted)
+        if (!CanReachWinder(out Vector3 look))
             return null;
 
-        if (cameraPivot == null)
-            EnsureTpsCamera();
-        if (cameraPivot == null)
-            return null;
-
-        Vector3 look = cameraPivot.forward;
-        if (look.sqrMagnitude < 0.0001f)
-            return null;
-        look.Normalize();
-
-        const float reach = 2.4f;
         WinderMove[] winders = FindObjectsByType<WinderMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         WinderMove closest = null;
-        float closestDistance = reach;
+        float closestDistance = WinderReach;
         for (int i = 0; i < winders.Length; i++)
         {
-            Transform spring = winders[i].Spring;
-            if (winders[i].IsDead || spring == null)
+            if (winders[i].IsDead)
                 continue;
-
-            Vector3 toSpringFlat = spring.position - transform.position;
-            toSpringFlat.y = 0f;
-            float distance = toSpringFlat.magnitude;
-            if (distance > reach || distance < 0.05f)
-                continue;
-
-            Vector3 back = spring.position - winders[i].transform.position;
-            back.y = 0f;
-            if (back.sqrMagnitude < 0.0004f)
+            if (SpringReachable(winders[i].Spring, winders[i].transform, look, out float distance) && distance < closestDistance)
             {
-                back = -winders[i].transform.forward;
-                back.y = 0f;
+                closestDistance = distance;
+                closest = winders[i];
             }
-
-            if (back.sqrMagnitude < 0.0001f)
-                continue;
-            back.Normalize();
-
-            Vector3 fromWinder = transform.position - winders[i].transform.position;
-            fromWinder.y = 0f;
-            if (fromWinder.sqrMagnitude < 0.0001f || Vector3.Dot(fromWinder.normalized, back) < 0.45f)
-                continue;
-
-            Vector3 toSpring = spring.position - cameraPivot.position;
-            if (toSpring.sqrMagnitude < 0.0001f || Vector3.Angle(look, toSpring) > 34f)
-                continue;
-
-            if (distance >= closestDistance)
-                continue;
-
-            closestDistance = distance;
-            closest = winders[i];
         }
-
         return closest;
     }
 
+    /// <summary>온라인: 다른 사람이 조작하는 와인더(복사본)의 등 태엽이 닿는 거리인지</summary>
+    public NetPuppet FindWinderPuppetInReach()
+    {
+        if (FusionMatchBackend.Online == null || !CanReachWinder(out Vector3 look))
+            return null;
+
+        NetPuppet[] puppets = FindObjectsByType<NetPuppet>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        NetPuppet closest = null;
+        float closestDistance = WinderReach;
+        for (int i = 0; i < puppets.Length; i++)
+        {
+            NetPuppet p = puppets[i];
+            if (p.Kind != NetPose.KindWinder || !p.Alive)
+                continue;
+            if (SpringReachable(p.Spring, p.transform, look, out float distance) && distance < closestDistance)
+            {
+                closestDistance = distance;
+                closest = p;
+            }
+        }
+        return closest;
+    }
+
+    bool CanReachWinder(out Vector3 look)
+    {
+        look = Vector3.zero;
+        if (IsFainted)
+            return false;
+        if (cameraPivot == null)
+            EnsureTpsCamera();
+        if (cameraPivot == null)
+            return false;
+        look = cameraPivot.forward;
+        if (look.sqrMagnitude < 0.0001f)
+            return false;
+        look.Normalize();
+        return true;
+    }
+
+    /// <summary>와인더 등 뒤에서, 태엽을 바라보고, 손이 닿는 거리인지</summary>
+    bool SpringReachable(Transform spring, Transform winder, Vector3 look, out float distance)
+    {
+        distance = float.MaxValue;
+        if (spring == null)
+            return false;
+
+        Vector3 toSpringFlat = spring.position - transform.position;
+        toSpringFlat.y = 0f;
+        distance = toSpringFlat.magnitude;
+        if (distance > WinderReach || distance < 0.05f)
+            return false;
+
+        Vector3 back = spring.position - winder.position;
+        back.y = 0f;
+        if (back.sqrMagnitude < 0.0004f)
+        {
+            back = -winder.forward;
+            back.y = 0f;
+        }
+        if (back.sqrMagnitude < 0.0001f)
+            return false;
+        back.Normalize();
+
+        Vector3 fromWinder = transform.position - winder.position;
+        fromWinder.y = 0f;
+        if (fromWinder.sqrMagnitude < 0.0001f || Vector3.Dot(fromWinder.normalized, back) < 0.45f)
+            return false;
+
+        Vector3 toSpring = spring.position - cameraPivot.position;
+        return toSpring.sqrMagnitude >= 0.0001f && Vector3.Angle(look, toSpring) <= 34f;
+    }
+
     public bool IsFainted => State == TickToyState.Faint;
+    public bool HitFaceActive => animationController != null && animationController.HitFaceActive;
     public int Hp => hp;
     public bool FaintCancelled { get; private set; }
     public bool IsUsingAbility =>
@@ -872,7 +908,9 @@ public class TickToyMove : MonoBehaviour
         if (tpsCamera != null)
             tpsCamera.fieldOfView = FixedFieldOfView;
 
-        Vector3 forward = transform.forward;
+        // 관전 중이면 내 몸 대신 보고 있는 틱토이 뒤에서 같은 각도로
+        Transform follow = SpectateTarget != null ? SpectateTarget : transform;
+        Vector3 forward = follow.forward;
         forward.y = 0f;
         if (forward.sqrMagnitude < 0.0001f)
             forward = Vector3.forward;
@@ -880,7 +918,9 @@ public class TickToyMove : MonoBehaviour
             forward.Normalize();
 
         float pitchRadians = cameraPitch * Mathf.Deg2Rad;
-        Vector3 focus = transform.TransformPoint(bodyRestLocalPosition) + Vector3.up * focusHeight;
+        Vector3 focus = SpectateTarget != null
+            ? SpectateTarget.position + Vector3.up * focusHeight
+            : transform.TransformPoint(bodyRestLocalPosition) + Vector3.up * focusHeight;
         Vector3 desired = focus
             - forward * (bodyHeight * cameraDistance * Mathf.Cos(pitchRadians))
             + Vector3.up * (bodyHeight * cameraHeight + bodyHeight * CameraPitchScale * Mathf.Sin(pitchRadians));
@@ -1063,6 +1103,8 @@ public class TickToyMove : MonoBehaviour
         if (State == TickToyState.Dead)
             return;
 
+        GameAudio.Play(SoundId.PlayPossum, SoundScope.Private); // 나와 나를 관전하는 사람만 들음
+
         State = TickToyState.Faint;
         FaintCancelled = false;
         faintCanBreak = false;
@@ -1113,12 +1155,19 @@ public class TickToyMove : MonoBehaviour
         // 달리기/드러눕기 타이머용 abilityDuration·runDuration은 건드리지 않음
         duplicateTimeLeft = duplicateDuration;
         SpawnDuplicates(cloneCount);
-        SpawnDuplicateCloud(duplicateDuration);
+        Vector3 cloudPos = bodyCollider != null
+            ? bodyCollider.bounds.center
+            : transform.position + Vector3.up * (bodyHeight * 0.45f);
+        SpawnDuplicateCloud(cloudPos, duplicateDuration);
+        FusionMatchBackend.Online?.SendDuplicateCloud(cloudPos, duplicateDuration); // 다른 사람 화면에도 연막
     }
 
     void SpawnDuplicates(int count)
     {
         const float radius = 1.15f;
+        // 온라인 + 내가 방장이 아님: 방장이 분신(AI)을 만들어야 모두에게 보임 → 자리만 계산해서 요청
+        FusionMatchBackend online = FusionMatchBackend.Online;
+        Vector3[] requested = online != null && !online.IsHost ? new Vector3[count] : null;
         for (int i = 0; i < count; i++)
         {
             float angle = count == 1 ? 90f : (360f * i / count);
@@ -1131,12 +1180,20 @@ public class TickToyMove : MonoBehaviour
             if (AiGroundUtil.TryFindGroundNearPlayerOrWorld(spawnPos, transform.position.y, out Vector3 ground))
                 spawnPos = new Vector3(spawnPos.x, ground.y, spawnPos.z);
 
+            if (requested != null)
+            {
+                requested[i] = spawnPos;
+                continue;
+            }
+
             // 본체와 같은 루트를 복제 → 실제 AI(TickToyAI)로 전환
             GameObject clone = Instantiate(gameObject, spawnPos, transform.rotation);
             clone.name = gameObject.name + "_Duplicate_" + (i + 1);
             PrepareDuplicateAsAI(clone, spawnPos);
             duplicates.Add(clone);
         }
+        if (requested != null && RoundManager.Instance != null)
+            online.RequestDuplicates(RoundManager.Instance.LocalCharIndex, requested, transform.eulerAngles.y);
     }
 
     void PrepareDuplicateAsAI(GameObject clone, Vector3 groundedPos)
@@ -1229,12 +1286,11 @@ public class TickToyMove : MonoBehaviour
         KeepOneAudioListener();
     }
 
-    void SpawnDuplicateCloud(float totalSeconds)
+    /// <summary>분신술 연막 (온라인이면 다른 사람 화면에서도 같은 자리에 만듦)</summary>
+    public static void SpawnDuplicateCloud(Vector3 position, float totalSeconds)
     {
-        GameObject cloud = new GameObject(gameObject.name + "_DuplicateCloud");
-        cloud.transform.position = bodyCollider != null
-            ? bodyCollider.bounds.center
-            : transform.position + Vector3.up * (bodyHeight * 0.45f);
+        GameObject cloud = new GameObject("DuplicateCloud");
+        cloud.transform.position = position;
 
         ParticleSystem particles = cloud.AddComponent<ParticleSystem>();
         particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
@@ -1389,6 +1445,8 @@ public class TickToyMove : MonoBehaviour
             hud.SetHp(hp);
 
         HitFeedback.PlayTickToyHit(transform);
+        if (animationController != null)
+            animationController.ShowHitFace();
 
         if (hp <= 0)
         {

@@ -81,12 +81,19 @@ public class ChatBox : MonoBehaviour
     {
         ChatLog.Changed -= Refresh;
         SetTyping(false);
+        if (inGame)
+            Input.imeCompositionMode = IMECompositionMode.Auto;
     }
 
     void Update()
     {
         if (input == null)
             return;
+
+        // 게임 중: 한글 입력(IME)이 켜져 있으면 WASD 같은 글자 키가 캐릭터 조작에 안 들어감
+        // → 채팅 입력 중일 때만 한글 입력 켜고, 평소엔 꺼 둠
+        if (inGame)
+            Input.imeCompositionMode = typing ? IMECompositionMode.On : IMECompositionMode.Off;
 
         bool enter = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
 

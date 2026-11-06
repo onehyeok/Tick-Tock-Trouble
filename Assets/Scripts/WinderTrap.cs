@@ -21,6 +21,25 @@ public class WinderTrap : MonoBehaviour
 
     public Vector3 PlaceCenter => seatedPos;
 
+    /// <summary>온라인 덫 번호 (0 = 오프라인). 같은 덫을 모든 화면에서 찾기 위함</summary>
+    public int NetId;
+
+    /// <summary>다른 화면에서 이 덫에 누가 걸렸음 → 내 화면의 같은 덫도 닫히고 사라짐</summary>
+    public static void RemoteSprung(int id)
+    {
+        WinderTrap[] traps = FindObjectsByType<WinderTrap>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        for (int i = 0; i < traps.Length; i++)
+        {
+            WinderTrap trap = traps[i];
+            if (trap == null || trap.NetId != id || trap.sprung)
+                continue;
+            trap.sprung = true;
+            trap.armed = false;
+            trap.ApplyViewerPose();
+            trap.StartCoroutine(trap.ReleaseAndDestroy(null));
+        }
+    }
+
     /// <summary>틱토이 카메라가 이번 프레임에 활성임을 알림.</summary>
     public static void ReportTickToyViewing()
     {
@@ -233,6 +252,8 @@ public class WinderTrap : MonoBehaviour
         TrapOutlineUtil.Apply(victim);
         toy.TrapFreeze(HoldSeconds);
         StartCoroutine(ReleaseAndDestroy(victim));
+        if (NetId != 0)
+            FusionMatchBackend.Online?.SendTrapSprung(NetId);
     }
 
     static void SnapVictim(Transform victim, Vector3 center)

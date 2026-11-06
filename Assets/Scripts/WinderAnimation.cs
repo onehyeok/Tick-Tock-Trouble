@@ -284,6 +284,11 @@ public class WinderAnimation : MonoBehaviour
                 return;
 
             FusionMatchBackend.Online?.SendHit(puppet, damage);
+            // 때린 쪽 화면에도 맞는 연출 (틱토이: 나사 튀어나옴 / AI: 얼굴 깜빡)
+            if (puppet.Kind == NetPose.KindAI)
+                HitFeedback.PlayAiHit(puppet.transform);
+            else
+                HitFeedback.PlayTickToyHit(puppet.transform);
             if (puppet.Kind == NetPose.KindAI && !gold && move != null)
                 move.TakeHit(NormalDamage);
             if (gold && move != null)

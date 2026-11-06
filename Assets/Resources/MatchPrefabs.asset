@@ -18,4 +18,4 @@ MonoBehaviour:
   - {fileID: 2292576379444011657, guid: 5349dd475283c374a8865abb7c8ec263, type: 3}
   - {fileID: 7330630477638988723, guid: d6a5f1a4125946241a34a6a608fe1092, type: 3}
   - {fileID: 4755280112324854220, guid: f94caa7c9b5de214d86c81d12b09c3a8, type: 3}
-  winderStartRoom: {fileID: 3232005819949802423, guid: 557ebd6a643458f458807592863e48b2, type: 3}
+  netCharacterPrefab: {fileID: 2360287790079282755, guid: 5762685bed854eb448c107628322c886, type: 3}

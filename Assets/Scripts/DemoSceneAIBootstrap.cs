@@ -562,7 +562,8 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         return false;
     }
 
-    void ConvertToAI(GameObject instance, Vector3 groundedPos)
+    /// <summary>틱토이 프리팹 복사본을 맵 AI 로 바꿈 (방장이 만드는 온라인 분신도 사용)</summary>
+    public static void ConvertToAI(GameObject instance, Vector3 groundedPos)
     {
         Rigidbody rb = instance.GetComponent<Rigidbody>();
         if (rb == null)

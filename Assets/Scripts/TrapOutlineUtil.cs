@@ -21,6 +21,8 @@ public static class TrapOutlineUtil
         Clear(root);
         Material mask = GetMaskMaterial();
         Material edge = GetEdgeMaterial();
+        if (mask == null || edge == null)
+            return; // 셰이더를 못 찾으면 테두리만 생략 (덫 기능은 그대로)
         TrapOutlineMarker marker = root.gameObject.AddComponent<TrapOutlineMarker>();
 
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>(false);
@@ -104,9 +106,24 @@ public static class TrapOutlineUtil
         return go;
     }
 
+    /// <summary>빌드에선 쓰는 곳이 없는 셰이더가 빠짐 → Resources 의 머티리얼(TrapOutlineMask/Edge)이 셰이더를 빌드에 넣어 줌</summary>
+    static Shader FindShader(string shaderName, string resourceMaterial)
+    {
+        Shader shader = Shader.Find(shaderName);
+        if (shader == null)
+        {
+            Material m = Resources.Load<Material>(resourceMaterial);
+            if (m != null)
+                shader = m.shader;
+        }
+        return shader;
+    }
+
     static Material GetMaskMaterial()
     {
-        Shader shader = Shader.Find("TickTock/TrapOutlineMask");
+        Shader shader = FindShader("TickTock/TrapOutlineMask", "TrapOutlineMask");
+        if (shader == null)
+            return null;
         if (maskMaterial != null && maskMaterial.shader == shader)
             return maskMaterial;
         if (maskMaterial != null)
@@ -120,7 +137,9 @@ public static class TrapOutlineUtil
 
     static Material GetEdgeMaterial()
     {
-        Shader shader = Shader.Find("TickTock/TrapOutlineEdge");
+        Shader shader = FindShader("TickTock/TrapOutlineEdge", "TrapOutlineEdge");
+        if (shader == null)
+            return null;
         if (edgeMaterial != null && edgeMaterial.shader == shader)
             return edgeMaterial;
         if (edgeMaterial != null)

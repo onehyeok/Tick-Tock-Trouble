@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -60,7 +61,8 @@ public class TickToyAI : MonoBehaviour
     const float MaxPushPerStep = 0.08f;   // 겹침 밀어내기 한 스텝 최대 (순간이동 방지)
     const float MaxGroundStepY = 0.4f;    // 바닥 높이 한 스텝 최대 변화
 
-    static TickToyMove[] cachedPlayers = new TickToyMove[0];
+    // 밀어낼 플레이어 몸통: 내 틱토이 + (온라인) 다른 사람 틱토이 복사본
+    static readonly List<Collider> cachedPlayers = new List<Collider>();
     static float playersCachedAt = -10f;
 
     Vector3 CurPos => inStep ? stepPos : (rb != null ? rb.position : transform.position);
@@ -166,6 +168,7 @@ public class TickToyAI : MonoBehaviour
 
     void Update()
     {
+        UpdateHitFace();
         if (dead)
             return;
 
@@ -338,17 +341,27 @@ public class TickToyAI : MonoBehaviour
         // 매 물리 스텝·AI마다 씬 전체 검색하던 것 → 0.5초마다 한 번만 (AI 40마리 렉 원인)
         if (Time.time - playersCachedAt > 0.5f)
         {
-            cachedPlayers = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            cachedPlayers.Clear();
+            foreach (TickToyMove m in FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                Collider c = m.GetComponent<Collider>();
+                if (c != null)
+                    cachedPlayers.Add(c);
+            }
+            if (FusionMatchBackend.Online != null)
+            {
+                foreach (NetPuppet p in FindObjectsByType<NetPuppet>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                {
+                    Collider c = p.Kind == NetPose.KindTickToy ? p.GetComponent<Collider>() : null;
+                    if (c != null)
+                        cachedPlayers.Add(c);
+                }
+            }
             playersCachedAt = Time.time;
         }
-        TickToyMove[] players = cachedPlayers;
-        for (int i = 0; i < players.Length; i++)
+        for (int i = 0; i < cachedPlayers.Count; i++)
         {
-            TickToyMove player = players[i];
-            if (player == null)
-                continue;
-
-            Collider playerCol = player.GetComponent<Collider>();
+            Collider playerCol = cachedPlayers[i];
             if (playerCol == null || !playerCol.enabled)
                 continue;
 
@@ -785,9 +798,61 @@ public class TickToyAI : MonoBehaviour
             animator.SetTrigger("GetHit");
 
         HitFeedback.PlayAiHit(transform);
+        ShowHitFace();
 
         if (hp <= 0)
             Die();
+    }
+
+    // ---------- 맞았을 때 표정: 잠깐 @@ (Face_Dizzy) → 원래 표정 ----------
+    public const float HitFaceSeconds = 0.8f;
+    List<Renderer> faceRenderers;
+    readonly List<bool> faceWasOn = new List<bool>();
+    float hitFaceUntil;
+
+    /// <summary>방장: 다른 사람 화면에도 맞은 표정을 보이게 (NetCharacter 가 읽음)</summary>
+    public bool HitFaceActive => hitFaceUntil > 0f;
+
+    void ShowHitFace()
+    {
+        if (faceRenderers == null)
+        {
+            faceRenderers = new List<Renderer>();
+            foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.name.Contains("Face_"))
+                    faceRenderers.Add(r);
+            }
+        }
+        if (!faceRenderers.Exists(r => r != null && r.name.EndsWith("Face_Dizzy")))
+            return;
+
+        if (hitFaceUntil <= 0f)
+        {
+            faceWasOn.Clear();
+            foreach (Renderer r in faceRenderers)
+                faceWasOn.Add(r != null && r.enabled);
+        }
+        foreach (Renderer r in faceRenderers)
+        {
+            if (r != null)
+                r.enabled = r.name.EndsWith("Face_Dizzy");
+        }
+        hitFaceUntil = Time.time + HitFaceSeconds;
+    }
+
+    void UpdateHitFace()
+    {
+        if (hitFaceUntil <= 0f || Time.time < hitFaceUntil)
+            return;
+        hitFaceUntil = 0f;
+        if (dead)
+            return; // 죽으면 @@ 그대로
+        for (int i = 0; i < faceRenderers.Count && i < faceWasOn.Count; i++)
+        {
+            if (faceRenderers[i] != null)
+                faceRenderers[i].enabled = faceWasOn[i];
+        }
     }
 
     void Die()

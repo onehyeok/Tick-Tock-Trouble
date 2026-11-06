@@ -145,6 +145,8 @@ public class WinderMove : MonoBehaviour
     /// <summary>달리기 능력 남은 시간 / 총 시간 (HUD 시계 타이머용)</summary>
     public float RunTimeLeft => runTimeLeft;
     public float RunDuration => runDuration;
+    /// <summary>황금 몽둥이 모델 (다른 사람 화면의 복사본도 이걸 씀)</summary>
+    public GameObject GoldWeaponPrefab => LoadGoldWeaponPrefab(brickGoldWeaponPrefab);
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
@@ -774,6 +776,9 @@ public class WinderMove : MonoBehaviour
         // 덫 설치 모드(R 후 좌클릭 전): 태엽 정지 — 능력 지급도 멈춤
         if (trapPlacing)
             return;
+        // 문이 열리기 전: 태엽이 돌지 않음 — 능력도 못 얻음
+        if (!RoundManager.DoorOpen)
+            return;
 
         springDegrees += 360f / FullTurnSeconds * Time.deltaTime;
         while (springDegrees >= 360f)
@@ -1107,14 +1112,37 @@ public class WinderMove : MonoBehaviour
 
     GameObject LoadTrapPrefab()
     {
-        if (trapPrefab != null)
-            return trapPrefab;
-#if UNITY_EDITOR
-        trapPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TrapModelPath);
-#endif
         if (trapPrefab == null)
-            trapPrefab = Resources.Load<GameObject>("Trap");
+            trapPrefab = LoadTrapPrefabStatic();
         return trapPrefab;
+    }
+
+    static GameObject LoadTrapPrefabStatic()
+    {
+        // 와인더 프리팹에 지정된 덫 모델 (빌드에서도 에디터와 같은 모델·색)
+        MatchPrefabs prefabs = MatchPrefabs.Load();
+        WinderMove winder = prefabs != null && prefabs.winderPrefab != null ? prefabs.winderPrefab.GetComponent<WinderMove>() : null;
+        GameObject prefab = winder != null ? winder.trapPrefab : null;
+        if (prefab != null)
+            return prefab;
+#if UNITY_EDITOR
+        prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TrapModelPath);
+#endif
+        if (prefab == null)
+            prefab = Resources.Load<GameObject>("Trap");
+        return prefab;
+    }
+
+    static GameObject LoadGoldWeaponPrefab(GameObject assigned)
+    {
+        GameObject prefab = assigned;
+#if UNITY_EDITOR
+        if (prefab == null)
+            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GoldWeaponPath);
+#endif
+        if (prefab == null)
+            prefab = Resources.Load<GameObject>("BrickGoldWeapon");
+        return prefab;
     }
 
     static void StripTrapPreviewColliders(GameObject root)
@@ -1181,14 +1209,42 @@ public class WinderMove : MonoBehaviour
         if (prefab == null)
             return;
 
-        GameObject placed = Instantiate(prefab, trapPlacePos, Quaternion.Euler(0f, transform.eulerAngles.y, 0f));
-        placed.name = "WinderTrap";
-        FitTrapVisualScale(placed);
-        SeatTrapOnGround(placed, trapPlacePos);
-        EnsureTrapRenderersVisible(placed);
-        PreparePlacedTrap(placed);
+        float yaw = transform.eulerAngles.y;
+        GameObject placed = BuildTrap(prefab, trapPlacePos, yaw);
+
+        // 온라인: 다른 사람 화면에도 같은 자리에 덫을 놓음
+        FusionMatchBackend online = FusionMatchBackend.Online;
+        if (online != null)
+        {
+            int id = online.LocalPlayerId * 1000 + (++trapCounter % 1000);
+            placed.GetComponent<WinderTrap>().NetId = id;
+            online.SendTrapPlaced(id, trapPlacePos, yaw);
+        }
 
         CancelTrapPlacement(false);
+    }
+
+    static int trapCounter;
+
+    static GameObject BuildTrap(GameObject prefab, Vector3 pos, float yaw)
+    {
+        GameObject placed = Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f));
+        placed.name = "WinderTrap";
+        FitTrapVisualScale(placed);
+        SeatTrapOnGround(placed, pos);
+        EnsureTrapRenderersVisible(placed);
+        PreparePlacedTrap(placed);
+        return placed;
+    }
+
+    /// <summary>다른 사람(와인더)이 놓은 덫을 내 화면에도 만듦</summary>
+    public static void SpawnRemoteTrap(int id, Vector3 pos, float yaw)
+    {
+        GameObject prefab = LoadTrapPrefabStatic();
+        if (prefab == null)
+            return;
+        GameObject placed = BuildTrap(prefab, pos, yaw);
+        placed.GetComponent<WinderTrap>().NetId = id;
     }
 
     static void PreparePlacedTrap(GameObject root)
@@ -1287,13 +1343,7 @@ public class WinderMove : MonoBehaviour
             return;
         }
 
-        GameObject prefab = brickGoldWeaponPrefab;
-#if UNITY_EDITOR
-        if (prefab == null)
-            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GoldWeaponPath);
-#endif
-        if (prefab == null)
-            prefab = Resources.Load<GameObject>("BrickGoldWeapon");
+        GameObject prefab = GoldWeaponPrefab;
 
         if (prefab == null || normalWeapon == null)
         {

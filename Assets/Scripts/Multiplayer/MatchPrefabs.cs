@@ -6,6 +6,8 @@ public class MatchPrefabs : ScriptableObject
 {
     public GameObject winderPrefab;
     public GameObject[] tickToyPrefabs;
+    /// <summary>온라인: 네트워크로 동기화되는 캐릭터 (NetworkObject + NetCharacter)</summary>
+    public GameObject netCharacterPrefab;
 
     static MatchPrefabs cached;
 

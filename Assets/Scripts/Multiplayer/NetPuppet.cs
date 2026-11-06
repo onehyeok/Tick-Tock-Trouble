@@ -1,26 +1,34 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>네트워크로 받은 위치·애니메이션을 그대로 보여주는 "다른 사람" 캐릭터 (조작 스크립트는 다 뺀 복사본)</summary>
+/// <summary>캐릭터 한 명의 보이는 상태 (위치·방향·애니메이션 레이어별 상태·파라미터)</summary>
 public struct NetPose
 {
     public const byte KindTickToy = 0;
     public const byte KindWinder = 1;
     public const byte KindAI = 2;
+    public const int MaxLayers = 6;
+    public const int MaxParams = 12;
+
+    // 상태 깃발 (다른 사람 화면에 똑같이 보이게)
+    public const int FlagFrozen = 1;   // 와인더: 태엽 정지당함
+    public const int FlagRunning = 2;  // 달리기 능력 중
+    public const int FlagGolden = 4;   // 와인더: 황금 몽둥이
+    public const int FlagTrapped = 8;  // 틱토이: 덫에 걸림
+    public const int FlagHitFace = 16; // 틱토이·AI: 맞아서 잠깐 @@ 표정
 
     public int id;
     public byte kind;
     public byte ch;
     public bool alive;
+    public int flags;
     public Vector3 pos;
     public float yaw;
-    public int hash;
+    public int[] hashes;   // 레이어별 현재 상태 (점프·공격·감정표현 포함)
+    public float[] weights; // 레이어 1~3 가중치 (0번은 항상 1)
     public float[] prm;
 
-    public bool IsTickToyLike => kind == KindTickToy || kind == KindAI;
-
     static readonly Dictionary<int, AnimatorControllerParameter[]> ParamCache = new Dictionary<int, AnimatorControllerParameter[]>();
-    const int MaxParams = 12;
     static readonly List<float> CaptureBuffer = new List<float>(MaxParams);
 
     public static Animator FindAnimator(GameObject go)
@@ -46,7 +54,7 @@ public struct NetPose
         return ps;
     }
 
-    public static NetPose Capture(GameObject go, int id, byte kind, byte ch, bool alive)
+    public static NetPose Capture(GameObject go, int id, byte kind, byte ch, bool alive, int flags = 0)
     {
         NetPose p = new NetPose
         {
@@ -54,16 +62,25 @@ public struct NetPose
             kind = kind,
             ch = ch,
             alive = alive,
+            flags = flags,
             pos = go.transform.position,
             yaw = go.transform.eulerAngles.y,
+            hashes = new int[MaxLayers],
+            weights = new float[MaxLayers],
             prm = System.Array.Empty<float>()
         };
 
         Animator a = FindAnimator(go);
         if (a != null && a.isActiveAndEnabled)
         {
-            AnimatorStateInfo st = a.IsInTransition(0) ? a.GetNextAnimatorStateInfo(0) : a.GetCurrentAnimatorStateInfo(0);
-            p.hash = st.fullPathHash;
+            int layers = Mathf.Min(MaxLayers, a.layerCount);
+            for (int l = 0; l < layers; l++)
+            {
+                AnimatorStateInfo st = a.IsInTransition(l) ? a.GetNextAnimatorStateInfo(l) : a.GetCurrentAnimatorStateInfo(l);
+                p.hashes[l] = st.fullPathHash;
+                p.weights[l] = l == 0 ? 1f : a.GetLayerWeight(l);
+            }
+
             AnimatorControllerParameter[] ps = Params(a);
             List<float> values = CaptureBuffer;
             values.Clear();
@@ -109,58 +126,45 @@ public struct NetPose
             }
         }
     }
-
-    public void Write(System.IO.BinaryWriter w)
-    {
-        w.Write(id);
-        w.Write(kind);
-        w.Write(ch);
-        w.Write(alive);
-        w.Write(pos.x);
-        w.Write(pos.y);
-        w.Write(pos.z);
-        w.Write((ushort)Mathf.RoundToInt(Mathf.Repeat(yaw, 360f) / 360f * 65535f));
-        w.Write(hash);
-        int n = prm != null ? Mathf.Min(prm.Length, MaxParams) : 0;
-        w.Write((byte)n);
-        for (int i = 0; i < n; i++)
-            w.Write((short)Mathf.Clamp(Mathf.RoundToInt(prm[i] * 100f), short.MinValue, short.MaxValue));
-    }
-
-    public static NetPose Read(System.IO.BinaryReader r)
-    {
-        NetPose p = new NetPose();
-        p.id = r.ReadInt32();
-        p.kind = r.ReadByte();
-        p.ch = r.ReadByte();
-        p.alive = r.ReadBoolean();
-        p.pos = new Vector3(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
-        p.yaw = r.ReadUInt16() / 65535f * 360f;
-        p.hash = r.ReadInt32();
-        int n = r.ReadByte();
-        p.prm = new float[n];
-        for (int i = 0; i < n; i++)
-            p.prm[i] = r.ReadInt16() / 100f;
-        return p;
-    }
 }
 
+/// <summary>
+/// 다른 사람(또는 방장 쪽 AI) 캐릭터를 보여주는 복사본. 조작 스크립트는 빼고, NetCharacter 가 받은 상태로 움직임.
+/// - 위치: 부드럽게 따라감
+/// - 애니메이션: 레이어마다 상태가 바뀌는 즉시 그 상태로 (점프·공격·감정표현이 빠지지 않게)
+/// - 태엽: 틱토이 등 태엽은 감는 중일 때만 보이게(원래 TickToyAnimation 과 같음), 와인더 등 태엽은 계속 돌아감
+/// </summary>
 public class NetPuppet : MonoBehaviour
 {
     public int NetId { get; private set; }
     public byte Kind { get; private set; }
+    public byte Ch { get; private set; }
     public bool Alive { get; private set; } = true;
     public bool IsTickToyLike => Kind == NetPose.KindTickToy || Kind == NetPose.KindAI;
-    public float LastSeen { get; private set; }
 
     Animator animator;
     Vector3 targetPos;
     float targetYaw;
-    int targetHash;
-    float mismatchTime;
+    readonly int[] targetHash = new int[NetPose.MaxLayers];
+    readonly int[] appliedHash = new int[NetPose.MaxLayers];
+    readonly float[] mismatch = new float[NetPose.MaxLayers];
     bool hasTarget;
 
-    /// <summary>프리팹 복사본에서 조작/카메라/소리 리스너를 빼고 보여주기용으로 만듦</summary>
+    GameObject[] spineSprings;
+    bool springsOn;
+    Transform winderSpring;
+    Quaternion winderSpringBase;
+    float winderSpringDeg;
+    int windingParam;
+    int flags;
+    Transform normalWeapon;
+    GameObject goldWeaponPrefab;
+    GameObject goldWeapon;
+    ParticleSystem[] runParticles;
+
+    /// <summary>와인더 등 태엽 (틱토이가 등 뒤에서 E 로 멈출 때 위치 판정)</summary>
+    public Transform Spring => winderSpring;
+
     public static NetPuppet Create(GameObject prefab, NetPose pose)
     {
         if (prefab == null)
@@ -169,6 +173,18 @@ public class NetPuppet : MonoBehaviour
         GameObject holder = new GameObject("PuppetHolder");
         holder.SetActive(false);
         GameObject go = Instantiate(prefab, pose.pos, Quaternion.Euler(0f, pose.yaw, 0f), holder.transform);
+
+        // 황금 몽둥이 모양 (와인더 프리팹에 연결된 것)
+        WinderMove prefabWinder = prefab.GetComponent<WinderMove>();
+        GameObject goldPrefab = prefabWinder != null ? prefabWinder.GoldWeaponPrefab : null;
+
+        // 팔 메시 분리(겨드랑이 보정)는 보이는 모양이라 유지
+        bool armpitFix = false;
+        foreach (MonoBehaviour mb in go.GetComponentsInChildren<MonoBehaviour>(true))
+        {
+            if (mb != null && mb.GetType().Name.EndsWith("ModelController"))
+                armpitFix = true;
+        }
 
         // 조작 스크립트 제거 (RequireComponent 때문에 몇 번 반복)
         for (int pass = 0; pass < 4; pass++)
@@ -201,11 +217,25 @@ public class NetPuppet : MonoBehaviour
         NetPuppet p = go.AddComponent<NetPuppet>();
         p.NetId = pose.id;
         p.Kind = pose.kind;
+        p.Ch = pose.ch;
         p.animator = NetPose.FindAnimator(go);
         if (p.animator != null)
         {
             p.animator.applyRootMotion = false;
-            p.animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
+            p.animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            if (armpitFix)
+                ArmpitSeparator.Apply(p.animator);
+            p.windingParam = HasParam(p.animator, "IsWinding") ? Animator.StringToHash("IsWinding") : 0;
+        }
+        p.CacheSprings();
+        p.CacheFaces();
+        p.goldWeaponPrefab = goldPrefab;
+        foreach (Transform t in go.GetComponentsInChildren<Transform>(true))
+        {
+            if (p.normalWeapon == null && t.name.StartsWith("BrickWeapon"))
+                p.normalWeapon = t;
+            if (t.name == "RunWhoosh")
+                p.runParticles = t.GetComponentsInChildren<ParticleSystem>(true);
         }
         go.name = (pose.kind == NetPose.KindWinder ? "NetWinder_" : pose.kind == NetPose.KindAI ? "NetAI_" : "NetTickToy_") + pose.id;
         p.SetTarget(pose);
@@ -213,14 +243,170 @@ public class NetPuppet : MonoBehaviour
         return p;
     }
 
+    static bool HasParam(Animator a, string name)
+    {
+        foreach (AnimatorControllerParameter p in a.parameters)
+        {
+            if (p.name == name)
+                return true;
+        }
+        return false;
+    }
+
+    void CacheSprings()
+    {
+        List<GameObject> springs = new List<GameObject>();
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+        {
+            if (Kind == NetPose.KindWinder)
+            {
+                if (winderSpring == null && t.name == "Spring")
+                {
+                    winderSpring = t;
+                    winderSpringBase = t.localRotation;
+                }
+                continue;
+            }
+            if (t.name != "Spine")
+                continue;
+            foreach (Transform child in t)
+            {
+                if (child.name.StartsWith("Spring"))
+                    springs.Add(child.gameObject);
+            }
+        }
+        spineSprings = springs.ToArray();
+        SetSpringsActive(false);
+    }
+
+    // ---------- 얼굴 (TickToyAnimation 과 같은 규칙: Face_xxx 렌더러 중 하나만 보이게) ----------
+    readonly Dictionary<string, List<Renderer>> faces = new Dictionary<string, List<Renderer>>();
+    string currentFace;
+    int[] danceHashes = System.Array.Empty<int>();
+
+    void CacheFaces()
+    {
+        faces.Clear();
+        currentFace = null;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+        {
+            int i = r.name.IndexOf("Face_", System.StringComparison.Ordinal);
+            if (i < 0)
+                continue;
+            string key = r.name.Substring(i + 5);
+            if (!faces.TryGetValue(key, out List<Renderer> list))
+                faces[key] = list = new List<Renderer>();
+            list.Add(r);
+        }
+
+        // 댄스 상태 해시 (레이어 이름.Dance1 / Dance2)
+        if (animator != null)
+        {
+            List<int> hs = new List<int>();
+            for (int l = 0; l < animator.layerCount; l++)
+            {
+                string layer = animator.GetLayerName(l);
+                hs.Add(Animator.StringToHash(layer + ".Dance1"));
+                hs.Add(Animator.StringToHash(layer + ".Dance2"));
+            }
+            danceHashes = hs.ToArray();
+        }
+        SetFace("Default");
+    }
+
+    void SetFace(string key)
+    {
+        if (faces.Count == 0 || key == currentFace)
+            return;
+        if (!faces.ContainsKey(key))
+            key = "Default";
+        foreach (KeyValuePair<string, List<Renderer>> kv in faces)
+        {
+            foreach (Renderer r in kv.Value)
+            {
+                if (r != null)
+                    r.enabled = kv.Key == key;
+            }
+        }
+        currentFace = key;
+    }
+
+    float danceTime;
+
+    void UpdateFace()
+    {
+        if (faces.Count == 0)
+            return;
+        bool dancing = false;
+        for (int l = 0; l < NetPose.MaxLayers && !dancing; l++)
+        {
+            for (int d = 0; d < danceHashes.Length; d++)
+            {
+                if (targetHash[l] != 0 && targetHash[l] == danceHashes[d])
+                {
+                    dancing = true;
+                    break;
+                }
+            }
+        }
+
+        string want = "Default";
+        if (!Alive || (flags & NetPose.FlagHitFace) != 0)
+            want = "Dizzy";
+        else if (dancing)
+        {
+            danceTime += Time.deltaTime;
+            want = ((int)(danceTime / 0.35f) % 2 == 0) ? "Happy" : "Surprised";
+        }
+        else
+            danceTime = 0f;
+        SetFace(want);
+    }
+
+    void SetSpringsActive(bool on)
+    {
+        springsOn = on;
+        if (spineSprings == null)
+            return;
+        for (int i = 0; i < spineSprings.Length; i++)
+        {
+            if (spineSprings[i] != null && spineSprings[i].activeSelf != on)
+                spineSprings[i].SetActive(on);
+        }
+    }
+
     public void SetTarget(NetPose pose)
     {
-        LastSeen = Time.unscaledTime;
         targetPos = pose.pos;
         targetYaw = pose.yaw;
-        targetHash = pose.hash;
         Alive = pose.alive;
-        pose.ApplyParams(animator);
+        ApplyFlags(pose.flags);
+
+        if (animator != null && animator.isActiveAndEnabled)
+        {
+            pose.ApplyParams(animator);
+            int layers = Mathf.Min(NetPose.MaxLayers, animator.layerCount);
+            for (int l = 0; l < layers; l++)
+            {
+                if (l > 0 && pose.weights != null)
+                    animator.SetLayerWeight(l, pose.weights[l]);
+                int h = pose.hashes != null ? pose.hashes[l] : 0;
+                if (h != 0 && h != targetHash[l])
+                {
+                    targetHash[l] = h;
+                    // 새 동작 시작(점프·공격·감정표현 등) → 바로 맞춤
+                    if (CurrentOrNext(l) != h && animator.HasState(l, h))
+                        animator.CrossFadeInFixedTime(h, 0.08f, l);
+                    appliedHash[l] = h;
+                    mismatch[l] = 0f;
+                }
+            }
+
+            bool winding = windingParam != 0 && animator.GetBool(windingParam);
+            if (winding != springsOn)
+                SetSpringsActive(winding);
+        }
+
         if (!hasTarget || (transform.position - targetPos).sqrMagnitude > 25f)
         {
             transform.position = targetPos;
@@ -229,31 +415,106 @@ public class NetPuppet : MonoBehaviour
         hasTarget = true;
     }
 
+    /// <summary>정지·달리기·황금 몽둥이·덫 상태를 그 사람 화면과 똑같이</summary>
+    void ApplyFlags(int next)
+    {
+        int prev = flags;
+        flags = next;
+        bool Has(int f, int v) => (v & f) != 0;
+
+        // 태엽 정지: 애니메이션 멈춤
+        if (animator != null)
+            animator.speed = Has(NetPose.FlagFrozen, next) ? 0f : 1f;
+
+        // 달리기 능력 쓰는 순간 슝 이펙트
+        if (Has(NetPose.FlagRunning, next) && !Has(NetPose.FlagRunning, prev) && runParticles != null)
+        {
+            for (int i = 0; i < runParticles.Length; i++)
+            {
+                runParticles[i].Clear(true);
+                runParticles[i].Play(true);
+            }
+        }
+
+        // 황금 몽둥이
+        bool gold = Has(NetPose.FlagGolden, next);
+        if (gold != Has(NetPose.FlagGolden, prev) || (gold && goldWeapon == null))
+            SetGolden(gold);
+
+        // 덫에 걸림 → 빨간 테두리
+        bool trapped = Has(NetPose.FlagTrapped, next);
+        if (trapped != Has(NetPose.FlagTrapped, prev))
+        {
+            if (trapped)
+                TrapOutlineUtil.Apply(transform);
+            else
+                TrapOutlineUtil.Clear(transform);
+        }
+    }
+
+    void SetGolden(bool gold)
+    {
+        if (normalWeapon == null)
+            return;
+        if (gold && goldWeapon == null && goldWeaponPrefab != null)
+        {
+            goldWeapon = Instantiate(goldWeaponPrefab, normalWeapon.parent);
+            goldWeapon.name = "BrickGoldWeapon";
+            goldWeapon.transform.localPosition = normalWeapon.localPosition;
+            goldWeapon.transform.localRotation = normalWeapon.localRotation;
+            goldWeapon.transform.localScale = normalWeapon.localScale;
+            foreach (Collider c in goldWeapon.GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+        }
+        if (goldWeapon != null)
+            goldWeapon.SetActive(gold);
+        normalWeapon.gameObject.SetActive(!gold || goldWeapon == null);
+    }
+
+    int CurrentOrNext(int layer)
+    {
+        if (animator.IsInTransition(layer))
+            return animator.GetNextAnimatorStateInfo(layer).fullPathHash;
+        return animator.GetCurrentAnimatorStateInfo(layer).fullPathHash;
+    }
+
     void Update()
     {
         if (!hasTarget)
             return;
 
-        float k = 1f - Mathf.Exp(-14f * Time.deltaTime);
+        float k = 1f - Mathf.Exp(-18f * Time.deltaTime);
         transform.position = Vector3.Lerp(transform.position, targetPos, k);
         transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0f, targetYaw, 0f), k);
 
-        // 애니메이션 상태가 계속 다르면 그 상태로 맞춤 (공격·죽음 등 트리거 동작)
-        if (animator != null && targetHash != 0 && animator.isActiveAndEnabled)
+        // 상태가 어긋난 채로 남아 있으면 다시 맞춤
+        if (animator != null && animator.isActiveAndEnabled)
         {
-            int cur = animator.GetCurrentAnimatorStateInfo(0).fullPathHash;
-            int next = animator.IsInTransition(0) ? animator.GetNextAnimatorStateInfo(0).fullPathHash : 0;
-            if (cur != targetHash && next != targetHash)
+            int layers = Mathf.Min(NetPose.MaxLayers, animator.layerCount);
+            for (int l = 0; l < layers; l++)
             {
-                mismatchTime += Time.deltaTime;
-                if (mismatchTime > 0.1f && animator.HasState(0, targetHash))
+                int h = targetHash[l];
+                if (h == 0 || CurrentOrNext(l) == h)
                 {
-                    animator.CrossFadeInFixedTime(targetHash, 0.1f, 0);
-                    mismatchTime = 0f;
+                    mismatch[l] = 0f;
+                    continue;
+                }
+                mismatch[l] += Time.deltaTime;
+                if (mismatch[l] > 0.2f && animator.HasState(l, h))
+                {
+                    animator.CrossFadeInFixedTime(h, 0.1f, l);
+                    mismatch[l] = 0f;
                 }
             }
-            else
-                mismatchTime = 0f;
+        }
+
+        UpdateFace();
+
+        // 와인더 등 태엽은 천천히 계속 돌아감 (10초에 한 바퀴, 문이 열린 뒤부터)
+        if (winderSpring != null && Alive && RoundManager.DoorOpen) // 문 열리기 전엔 멈춤
+        {
+            winderSpringDeg = Mathf.Repeat(winderSpringDeg + 36f * Time.deltaTime, 360f);
+            winderSpring.localRotation = winderSpringBase * Quaternion.Euler(0f, -winderSpringDeg, 0f);
         }
     }
 }
