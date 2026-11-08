@@ -198,6 +198,32 @@ public class TickToyMove : MonoBehaviour
     }
 
     public bool IsFainted => State == TickToyState.Faint;
+
+    /// <summary>변장할 수 있는 상태 (살아있고, 기절한 척·덫·태엽 감기 중이 아님)</summary>
+    public bool CanDisguise => (State == TickToyState.Play || State == TickToyState.Run) && !IsTrapFrozen && !IsWinding;
+
+    /// <summary>변장: 같은 자리에 다른 틱토이 모형으로 다시 만들고 HP·능력·달리기 상태를 그대로 옮김</summary>
+    public TickToyMove DisguiseAs(GameObject prefab)
+    {
+        Vector3 pos = rb != null ? rb.position : transform.position;
+        GameObject go = Instantiate(prefab, pos, Quaternion.Euler(0f, yaw, 0f));
+        go.name = gameObject.name;
+        TickToyMove next = go.GetComponent<TickToyMove>();
+        next.hp = hp;
+        next.yaw = yaw;
+        next.State = State;
+        next.runTimeLeft = runTimeLeft;
+        next.runDuration = runDuration;
+        next.abilityDuration = abilityDuration;
+        next.duplicateTimeLeft = duplicateTimeLeft;
+        next.grantedAbility = grantedAbility;
+        next.grantedLevel = grantedLevel;
+        next.wasRunning = wasRunning; // 달리기 이펙트가 다시 터지지 않게
+
+        gameObject.SetActive(false); // 같은 자리에서 몸끼리 부딪히지 않게 바로 끔
+        Destroy(gameObject);
+        return next;
+    }
     public bool HitFaceActive => animationController != null && animationController.HitFaceActive;
     public int Hp => hp;
     public bool FaintCancelled { get; private set; }

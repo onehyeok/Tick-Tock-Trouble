@@ -11,7 +11,7 @@ public static class GameAudio
 
     public static void Play(SoundId id, SoundScope scope)
     {
-        PlayLocal(id);
+        PlayHere(id);
         FusionMatchBackend.Online?.SendSound(id, scope);
     }
 
@@ -24,10 +24,11 @@ public static class GameAudio
             if (rm == null || rm.SpectateTargetId != origin)
                 return; // 그 사람을 관전 중이 아니면 안 들림
         }
-        PlayLocal(id);
+        PlayHere(id);
     }
 
-    static void PlayLocal(SoundId id)
+    /// <summary>내 화면에서만 재생 (모두에게 동시에 일어나는 일 — 예: 게임 시작 — 은 각자 이걸로)</summary>
+    public static void PlayHere(SoundId id)
     {
         GameSounds lib = GameSounds.Load();
         GameSounds.Entry e = lib != null ? lib.Get(id) : null;

@@ -123,6 +123,8 @@ public class RoundManager : MonoBehaviour
         hud = FindAnyObjectByType<TickToyHud>();
         FindStartWalls();
         SpawnLocalPlayer();
+        if (hud != null)
+            hud.SetDisguiseCount(localTickToy != null ? DisguiseLeft : -1); // 와인더는 숨김
         EnterHide();
     }
 
@@ -493,7 +495,11 @@ public class RoundManager : MonoBehaviour
             if (startWalls[i] != null)
                 startWalls[i].SetActive(false);
         }
-        ShowCountdown("문이 열렸어요!", 2f);
+        // 문이 열림 → GAME START (주황 글씨 + 갈색 테두리, 크게) + 시작 소리 (모두 각자 화면에서 같은 순간에 재생)
+        countdownText.fontSize = 72;
+        countdownText.color = UIKit.Orange;
+        ShowCountdown("GAME START", 2f);
+        GameAudio.PlayHere(SoundId.GameStart);
     }
 
     void EnterResult(bool winderWon, bool countWin = true)
@@ -532,6 +538,10 @@ public class RoundManager : MonoBehaviour
     void Update()
     {
         UpdateSpectate();
+        SuspectMarks.Tick();
+        UpdateWinderMark();
+        UpdateWinderAim();
+        UpdateDisguise();
         if (aborted)
             return;
         phaseLeft -= Time.deltaTime;
@@ -635,6 +645,164 @@ public class RoundManager : MonoBehaviour
     {
         if (localWinder != null && !localWinder.IsDead)
             localWinder.Freeze(seconds);
+    }
+
+    // ---------------- 와인더 Z: 의심되는 틱토이 표시 ----------------
+    const float MarkCooldown = 10f; // 한 번 표시하면 10초 뒤에 다시 (같은 대상이든 다른 대상이든)
+    const float MarkRange = 60f;
+    float markReadyTime;
+    static readonly RaycastHit[] markHits = new RaycastHit[32];
+
+    void UpdateWinderMark()
+    {
+        if (localWinder == null || localWinder.IsDead || GameSettings.MenuOpen || !Input.GetKeyDown(KeyCode.Z))
+            return;
+        if (Time.time < markReadyTime)
+            return;
+
+        Camera cam = localWinder.ViewCamera != null ? localWinder.ViewCamera : Camera.main;
+        if (cam == null)
+            return;
+        Ray ray = cam.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f)); // 조준점
+        // 정확히 맞으면 그 대상, 아니면 조금 넉넉하게(반지름 0.35) 한 번 더
+        if (!FindMarkTarget(Physics.RaycastNonAlloc(ray, markHits, MarkRange, ~0, QueryTriggerInteraction.Ignore), out int id, out GameObject obj)
+            && !FindMarkTarget(Physics.SphereCastNonAlloc(ray, 0.35f, markHits, MarkRange, ~0, QueryTriggerInteraction.Ignore), out id, out obj))
+            return;
+
+        markReadyTime = Time.time + MarkCooldown;
+        SuspectMarks.Add(id, obj);
+        if (id != 0)
+            FusionMatchBackend.Online?.SendMark(id);
+    }
+
+    /// <summary>가장 가까운 것부터: 틱토이(사람 복사본·AI)면 대상, 벽 같은 게 먼저 막으면 실패</summary>
+    bool FindMarkTarget(int count, out int id, out GameObject obj)
+    {
+        id = 0;
+        obj = null;
+        System.Array.Sort(markHits, 0, count, Comparer<RaycastHit>.Create((a, b) => a.distance.CompareTo(b.distance)));
+        FusionMatchBackend online = FusionMatchBackend.Online;
+        for (int i = 0; i < count; i++)
+        {
+            Collider c = markHits[i].collider;
+            if (c == null || c.transform.IsChildOf(localWinder.transform))
+                continue;
+
+            NetPuppet puppet = c.GetComponentInParent<NetPuppet>();
+            if (puppet != null)
+            {
+                if (puppet.Kind == NetPose.KindWinder || !puppet.Alive)
+                    return false;
+                id = puppet.NetId;
+                obj = puppet.gameObject;
+                return true;
+            }
+
+            TickToyAI ai = c.GetComponentInParent<TickToyAI>();
+            if (ai != null)
+            {
+                if (ai.IsDead)
+                    return false;
+                id = online != null ? online.AiNetId(ai) : 0;
+                obj = ai.gameObject;
+                return true;
+            }
+            return false; // 벽·바닥 등에 막힘
+        }
+        return false;
+    }
+
+    // ---------------- 와인더 조준점 + 근처 틱토이 힌트 바 ----------------
+    const float HintStartLeft = 120f; // 남은 시간이 2:00 이 되면 힌트 바가 나타남
+    const float HintFullDistance = 10f;  // 이 거리 안에 틱토이 플레이어가 있으면 가득
+    const float HintEmptyDistance = 35f; // 이 거리보다 멀면 비어 있음 (범위를 넓게 → 한 마리씩 찾기엔 부족한 힌트)
+    WinderAimHud winderAimHud;
+    float hintFill;
+
+    void UpdateWinderAim()
+    {
+        if (winderAimHud == null)
+            winderAimHud = FindAnyObjectByType<WinderAimHud>(FindObjectsInactive.Include);
+        if (winderAimHud == null)
+            return;
+
+        bool aim = localWinder != null && !localWinder.IsDead && !aborted;
+        bool bar = aim && phase == Phase.Hunt && phaseLeft <= HintStartLeft;
+        winderAimHud.SetVisible(aim, bar);
+        if (!bar)
+        {
+            hintFill = 0f;
+            winderAimHud.SetFill(0f);
+            return;
+        }
+
+        // 가장 가까운 살아있는 틱토이 '플레이어' (맵 AI 는 세지 않음, 변장해도 셈)
+        float nearest = float.MaxValue;
+        Vector3 me = localWinder.transform.position;
+        foreach (NetCharacter nc in NetCharacter.Players.Values)
+        {
+            if (nc == null || nc.Kind != NetPose.KindTickToy || !nc.Alive || !nc.HasPose)
+                continue;
+            nearest = Mathf.Min(nearest, Vector3.Distance(me, nc.Pos));
+        }
+        float target = Mathf.InverseLerp(HintEmptyDistance, HintFullDistance, nearest);
+        target = Mathf.Round(target * 5f) / 5f; // 5칸으로만 → 정확한 위치는 안 알려 줌
+        hintFill = Mathf.MoveTowards(hintFill, target, Time.deltaTime);
+        winderAimHud.SetFill(hintFill);
+    }
+
+    // ---------------- 틱토이 변장 (Q) ----------------
+    const int DisguiseUses = 5;
+    const float DisguiseReach = 2.5f;
+    public int DisguiseLeft { get; private set; } = DisguiseUses;
+
+    void UpdateDisguise()
+    {
+        if (localTickToy == null || localTickToy.IsDead || DisguiseLeft <= 0 || GameSettings.MenuOpen || !Input.GetKeyDown(KeyCode.Q))
+            return;
+        if (!localTickToy.CanDisguise)
+            return;
+        MatchPrefabs prefabs = MatchPrefabs.Load();
+        if (prefabs == null || prefabs.tickToyPrefabs == null)
+            return;
+
+        int ch = NearestAiChar(localTickToy.transform.position);
+        if (ch < 0 || ch == LocalCharIndex || ch >= prefabs.tickToyPrefabs.Length)
+            return; // 근처에 AI 가 없거나 이미 같은 모양
+
+        localTickToy = localTickToy.DisguiseAs(prefabs.tickToyPrefabs[ch]);
+        localPlayer = localTickToy.gameObject;
+        LocalCharIndex = ch; // 다른 사람 화면의 내 복사본도 이 모양으로 바뀜
+        DisguiseLeft--;
+        TickToyMove.KeepOneAudioListener();
+        if (hud != null)
+            hud.SetDisguiseCount(DisguiseLeft);
+    }
+
+    /// <summary>가장 가까운 틱토이 AI 의 캐릭터 번호 (없으면 -1). 방장·오프라인은 진짜 AI, 참가자는 AI 복사본</summary>
+    static int NearestAiChar(Vector3 pos)
+    {
+        int best = -1;
+        float bestDist = DisguiseReach;
+        foreach (TickToyAI ai in FindObjectsByType<TickToyAI>(FindObjectsSortMode.None))
+        {
+            float d = Vector3.Distance(pos, ai.transform.position);
+            if (!ai.IsDead && d < bestDist)
+            {
+                bestDist = d;
+                best = FusionMatchBackend.CharIndexOf(ai.gameObject);
+            }
+        }
+        foreach (NetPuppet p in FindObjectsByType<NetPuppet>(FindObjectsSortMode.None))
+        {
+            float d = Vector3.Distance(pos, p.transform.position);
+            if (p.Kind == NetPose.KindAI && p.Alive && d < bestDist)
+            {
+                bestDist = d;
+                best = p.Ch;
+            }
+        }
+        return best;
     }
 
     // ---------------- 관전 (죽은 틱토이 → 살아있는 다른 틱토이 플레이어 화면) ----------------

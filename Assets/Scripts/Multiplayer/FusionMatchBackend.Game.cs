@@ -392,6 +392,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     public const byte EvWinderStop = 3;
     public const byte EvDuplicateCloud = 4;
     public const byte EvSound = 5;
+    public const byte EvMark = 6;
 
     /// <summary>내가 한 일을 모두에게 알림 (나는 이미 내 화면에서 했으므로 다시 하지 않음)</summary>
     void SendGameEvent(byte kind, Action<BinaryWriter> body)
@@ -416,6 +417,25 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public void SendDuplicateCloud(Vector3 pos, float seconds) =>
         SendGameEvent(EvDuplicateCloud, w => { w.Write(pos.x); w.Write(pos.y); w.Write(pos.z); w.Write(seconds); });
+
+    /// <summary>와인더 Z: 의심되는 틱토이(사람·AI) 표시 → 모두의 화면에 빨간 테두리</summary>
+    public void SendMark(int targetId) =>
+        SendGameEvent(EvMark, w => w.Write(targetId));
+
+    /// <summary>id 의 캐릭터가 내 화면에서 어떤 오브젝트인지 (나 / 방장의 진짜 AI / 다른 사람 복사본)</summary>
+    public GameObject CharacterObject(int netId)
+    {
+        if (netId == LocalPlayerId)
+            return RoundManager.Instance != null ? RoundManager.Instance.LocalPlayerObject : null;
+        if (!NetCharacter.ById.TryGetValue(netId, out NetCharacter nc) || nc == null)
+            return null;
+        if (nc.SourceAI != null)
+            return nc.SourceAI.gameObject;
+        return nc.Puppet != null ? nc.Puppet.gameObject : null;
+    }
+
+    /// <summary>(방장) 맵 AI 의 네트워크 id (아직 등록 전이면 0)</summary>
+    public int AiNetId(TickToyAI ai) => ai != null && aiIds.TryGetValue(ai, out int id) ? id : 0;
 
     /// <summary>소리를 다른 사람에게도 (누가 들을지는 받는 쪽에서 scope 로 판단)</summary>
     public void SendSound(SoundId id, SoundScope scope) =>
@@ -454,6 +474,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 }
                 break;
             }
+            case EvMark:
+                SuspectMarks.Add(rd.ReadInt32(), null);
+                break;
             case EvSound:
             {
                 SoundId id = (SoundId)rd.ReadByte();

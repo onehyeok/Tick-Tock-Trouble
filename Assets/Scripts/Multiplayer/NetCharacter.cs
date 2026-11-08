@@ -58,6 +58,8 @@ public struct NetPoseInput : INetworkInput
 public class NetCharacter : NetworkBehaviour
 {
     public static readonly Dictionary<int, NetCharacter> Players = new Dictionary<int, NetCharacter>();
+    /// <summary>사람 + 맵 AI 전부 (id → 캐릭터). 와인더 Z 표시 대상 찾기에 사용</summary>
+    public static readonly Dictionary<int, NetCharacter> ById = new Dictionary<int, NetCharacter>();
     const int AiIdBase = 10000;
 
     [Networked] public int NetId { get; set; }
@@ -90,6 +92,7 @@ public class NetCharacter : NetworkBehaviour
         Runner.MakeDontDestroyOnLoad(gameObject);
         if (NetId < AiIdBase)
             Players[NetId] = this;
+        ById[NetId] = this;
         pose = new NetPose
         {
             hashes = new int[NetPose.MaxLayers],
@@ -102,6 +105,8 @@ public class NetCharacter : NetworkBehaviour
     {
         if (Players.TryGetValue(NetId, out NetCharacter nc) && nc == this)
             Players.Remove(NetId);
+        if (ById.TryGetValue(NetId, out NetCharacter any) && any == this)
+            ById.Remove(NetId);
         if (puppet != null)
             Destroy(puppet.gameObject);
     }

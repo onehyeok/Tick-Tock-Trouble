@@ -5,6 +5,7 @@ public enum SoundId : byte
 {
     None = 0,
     PlayPossum = 1, // 틱토이: 기절한 척하기
+    GameStart = 2,  // 문이 열릴 때 (GAME START)
 }
 
 /// <summary>누가 듣는 소리인지</summary>

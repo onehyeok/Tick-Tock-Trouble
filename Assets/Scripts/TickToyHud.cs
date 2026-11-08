@@ -46,6 +46,7 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Image abilityIcon;
     [SerializeField] private Text abilityFallbackText;
     [SerializeField] private Text levelText;
+    [SerializeField] private Text disguiseText; // "변장 x 5" (능력 칸 아래)
 
     private float windProgress;
     private bool windBlockedUntilRelease;
@@ -432,6 +433,16 @@ public class TickToyHud : MonoBehaviour
     {
         if (abilityTimerRoot != null)
             abilityTimerRoot.SetActive(false);
+    }
+
+    /// <summary>남은 변장 횟수 표시 (음수 = 숨김, 와인더)</summary>
+    public void SetDisguiseCount(int left)
+    {
+        if (disguiseText == null)
+            return;
+        disguiseText.gameObject.SetActive(left >= 0);
+        if (left >= 0)
+            disguiseText.text = "변장 x " + left;
     }
 
     public void HideAll()

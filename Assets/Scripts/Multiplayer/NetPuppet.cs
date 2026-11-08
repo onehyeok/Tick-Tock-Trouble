@@ -140,6 +140,8 @@ public class NetPuppet : MonoBehaviour
     public byte Kind { get; private set; }
     public byte Ch { get; private set; }
     public bool Alive { get; private set; } = true;
+    /// <summary>덫에 걸린 상태 (빨간 테두리를 와인더 Z 표시가 지우지 않도록)</summary>
+    public bool IsTrapped => (flags & NetPose.FlagTrapped) != 0;
     public bool IsTickToyLike => Kind == NetPose.KindTickToy || Kind == NetPose.KindAI;
 
     Animator animator;

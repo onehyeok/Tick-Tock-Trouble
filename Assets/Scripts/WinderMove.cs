@@ -145,6 +145,8 @@ public class WinderMove : MonoBehaviour
     /// <summary>달리기 능력 남은 시간 / 총 시간 (HUD 시계 타이머용)</summary>
     public float RunTimeLeft => runTimeLeft;
     public float RunDuration => runDuration;
+    /// <summary>와인더 1인칭 카메라 (Z 의심 표시 조준)</summary>
+    public Camera ViewCamera => fpsCam;
     /// <summary>황금 몽둥이 모델 (다른 사람 화면의 복사본도 이걸 씀)</summary>
     public GameObject GoldWeaponPrefab => LoadGoldWeaponPrefab(brickGoldWeaponPrefab);
     public bool IsGrounded => isGrounded;
