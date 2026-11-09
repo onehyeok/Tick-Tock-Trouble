@@ -192,7 +192,7 @@ public class TickToyHud : MonoBehaviour
             UpdateAbilityTestKeys();
         RefreshStopPrompt();
         TickDamageFlashUi();
-        if (!menuOpen && stopPrompt != null && stopPrompt.gameObject.activeSelf && Input.GetKeyDown(KeyCode.E))
+        if (!menuOpen && stopPrompt != null && stopPrompt.gameObject.activeSelf && !stopTargetFrozen && Input.GetKeyDown(KeyCode.E))
             GrantOrLevelFromStop();
 
         if (!menuOpen && abilityLevel > 0 && PressedAbilityKey())
@@ -737,26 +737,39 @@ public class TickToyHud : MonoBehaviour
         promptObject.SetActive(false);
     }
 
+    bool stopTargetFrozen;
+    static readonly Color StopPromptNormal = Color.white;
+    static readonly Color StopPromptFrozen = new Color(1f, 0.25f, 0.2f, 1f);
+
+    /// <summary>와인더 등 뒤에 있으면 E 안내. 이미 태엽이 멈춘 와인더면 빨간 글씨 (E 안 됨)</summary>
     void RefreshStopPrompt()
     {
         if (stopPrompt == null)
             return;
 
-        stopPrompt.gameObject.SetActive(IsAnyTickToyNearWinder());
+        int state = NearWinderState();
+        stopTargetFrozen = state == 2;
+        stopPrompt.gameObject.SetActive(state != 0);
+        stopPrompt.color = stopTargetFrozen ? StopPromptFrozen : StopPromptNormal;
     }
 
-    bool IsAnyTickToyNearWinder()
+    /// <summary>0 = 근처에 와인더 없음, 1 = 정지시킬 수 있음, 2 = 이미 태엽이 멈춘 와인더</summary>
+    int NearWinderState()
     {
         TickToyMove[] toys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
         for (int i = 0; i < toys.Length; i++)
         {
             if (toys[i] == null || !toys[i].enabled || toys[i].IsDead)
                 continue;
-            if (toys[i].FindWinderInReach() != null || toys[i].FindWinderPuppetInReach() != null)
-                return true;
+            WinderMove winder = toys[i].FindWinderInReach();
+            if (winder != null)
+                return winder.IsFrozen ? 2 : 1;
+            NetPuppet puppet = toys[i].FindWinderPuppetInReach();
+            if (puppet != null)
+                return puppet.IsFrozen ? 2 : 1;
         }
 
-        return false;
+        return 0;
     }
 
     void ShowEmptyAbility()

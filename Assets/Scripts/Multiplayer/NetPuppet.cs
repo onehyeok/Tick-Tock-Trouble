@@ -16,6 +16,8 @@ public struct NetPose
     public const int FlagGolden = 4;   // 와인더: 황금 몽둥이
     public const int FlagTrapped = 8;  // 틱토이: 덫에 걸림
     public const int FlagHitFace = 16; // 틱토이·AI: 맞아서 잠깐 @@ 표정
+    public const int FlagFainted = 32; // 틱토이: 기절한 척하기 중 (@@ 표정)
+    public const int FlagSpringPaused = 64; // 와인더: 황금 몽둥이·덫을 쓰기 전이라 등 태엽 멈춤
 
     public int id;
     public byte kind;
@@ -142,6 +144,8 @@ public class NetPuppet : MonoBehaviour
     public bool Alive { get; private set; } = true;
     /// <summary>덫에 걸린 상태 (빨간 테두리를 와인더 Z 표시가 지우지 않도록)</summary>
     public bool IsTrapped => (flags & NetPose.FlagTrapped) != 0;
+    /// <summary>와인더: 틱토이가 E 로 태엽을 멈춘 상태</summary>
+    public bool IsFrozen => (flags & NetPose.FlagFrozen) != 0;
     public bool IsTickToyLike => Kind == NetPose.KindTickToy || Kind == NetPose.KindAI;
 
     Animator animator;
@@ -353,7 +357,7 @@ public class NetPuppet : MonoBehaviour
         }
 
         string want = "Default";
-        if (!Alive || (flags & NetPose.FlagHitFace) != 0)
+        if (!Alive || (flags & (NetPose.FlagHitFace | NetPose.FlagFainted)) != 0)
             want = "Dizzy";
         else if (dancing)
         {
@@ -513,7 +517,7 @@ public class NetPuppet : MonoBehaviour
         UpdateFace();
 
         // 와인더 등 태엽은 천천히 계속 돌아감 (10초에 한 바퀴, 문이 열린 뒤부터)
-        if (winderSpring != null && Alive && RoundManager.DoorOpen) // 문 열리기 전엔 멈춤
+        if (winderSpring != null && Alive && RoundManager.DoorOpen && (flags & (NetPose.FlagSpringPaused | NetPose.FlagFrozen)) == 0) // 문 열리기 전·능력 쓰기 전·태엽 정지당함 → 멈춤
         {
             winderSpringDeg = Mathf.Repeat(winderSpringDeg + 36f * Time.deltaTime, 360f);
             winderSpring.localRotation = winderSpringBase * Quaternion.Euler(0f, -winderSpringDeg, 0f);

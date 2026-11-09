@@ -54,12 +54,14 @@ public class RoundManager : MonoBehaviour
                 if (localWinder.IsFrozen) f |= NetPose.FlagFrozen;
                 if (localWinder.RunTimeLeft > 0f) f |= NetPose.FlagRunning;
                 if (localWinder.IsGoldenClub) f |= NetPose.FlagGolden;
+                if (localWinder.SpringPaused) f |= NetPose.FlagSpringPaused;
             }
             else if (localTickToy != null)
             {
                 if (localTickToy.State == TickToyMove.TickToyState.Run) f |= NetPose.FlagRunning;
                 if (localTickToy.IsTrapFrozen) f |= NetPose.FlagTrapped;
                 if (localTickToy.HitFaceActive) f |= NetPose.FlagHitFace;
+                if (localTickToy.IsFainted) f |= NetPose.FlagFainted;
             }
             return f;
         }
@@ -119,6 +121,7 @@ public class RoundManager : MonoBehaviour
 
     void Start()
     {
+        SuspectMarks.Clear(); // 이전 라운드의 의심 표시가 새 라운드 캐릭터에 남지 않게
         BuildUI();
         hud = FindAnyObjectByType<TickToyHud>();
         FindStartWalls();
@@ -499,7 +502,7 @@ public class RoundManager : MonoBehaviour
         countdownText.fontSize = 72;
         countdownText.color = UIKit.Orange;
         ShowCountdown("GAME START", 2f);
-        GameAudio.PlayHere(SoundId.GameStart);
+        GameAudio.PlayHere(SoundId.GameStart); // GAME START 효과음 (각자 화면에서 같은 순간에)
     }
 
     void EnterResult(bool winderWon, bool countWin = true)

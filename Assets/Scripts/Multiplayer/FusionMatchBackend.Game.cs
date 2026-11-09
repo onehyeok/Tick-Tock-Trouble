@@ -114,6 +114,23 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     // ---------------- 게임 중 동기화 ----------------
 
+    /// <summary>(참가자) 1초마다: 방장 캐릭터에 기록된 라운드가 내 라운드보다 앞서 있으면 따라감.
+    /// 메시지(신뢰성 데이터)가 늦거나 빠져도 네트워크 오브젝트 값은 계속 갱신되므로 결과 화면에 멈추지 않음</summary>
+    void ClientCheckRoundFromNetwork()
+    {
+        roundCheckTimer += Time.unscaledDeltaTime;
+        if (roundCheckTimer < 1f)
+            return;
+        roundCheckTimer = 0f;
+        foreach (NetCharacter nc in NetCharacter.Players.Values)
+        {
+            if (nc == null || nc.Object == null || !nc.Object.IsValid || nc.MatchRound <= MatchContext.Round)
+                continue;
+            ClientCatchUpRound(nc.MatchRound, nc.MatchTickToyWins, nc.MatchWinderWins);
+            return;
+        }
+    }
+
     /// <summary>(참가자) 방장은 다음 라운드인데 나는 아직 이전 라운드 → 다음 라운드 맵을 직접 불러옴.
     /// 맵 로딩 메시지를 놓쳐 결과 화면에 멈춰 있는 일을 막음</summary>
     void ClientCatchUpRound(int hostRound, int tickToyWins, int winderWins)
@@ -240,10 +257,17 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         }
     }
 
+    float roundCheckTimer;
+
     void Update()
     {
-        if (!InRoom || runner == null || !MatchContext.Active || !IsHost)
+        if (!InRoom || runner == null || !MatchContext.Active)
             return;
+        if (!IsHost)
+        {
+            ClientCheckRoundFromNetwork();
+            return;
+        }
         RoundManager rm = RoundManager.Instance;
         if (rm == null || rm.LocalPlayerObject == null)
             return;
@@ -400,10 +424,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         if (!InRoom || runner == null || !MatchContext.Active)
             return;
         int origin = LocalPlayerId;
+        int round = MatchContext.Round; // 받는 쪽이 이전 라운드 일을 걸러냄
         if (IsHost)
-            SendToClients(Msg(H2C_Event, w => { w.Write(kind); w.Write(origin); body(w); }));
+            SendToClients(Msg(H2C_Event, w => { w.Write(kind); w.Write(origin); w.Write(round); body(w); }));
         else
-            SendToHost(Msg(C2H_Event, w => { w.Write(kind); w.Write(origin); body(w); }));
+            SendToHost(Msg(C2H_Event, w => { w.Write(kind); w.Write(origin); w.Write(round); body(w); }));
     }
 
     public void SendTrapPlaced(int trapId, Vector3 pos, float yaw) =>

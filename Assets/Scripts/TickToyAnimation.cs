@@ -192,6 +192,9 @@ public class TickToyAnimation : MonoBehaviour
             NetPuppet remoteWinder = winder == null ? move.FindWinderPuppetInReach() : null;
             if (winder == null && remoteWinder == null)
                 return;
+            // 이미 태엽이 멈춘 와인더는 다시 못 멈춤 (다시 움직이기 시작하면 가능)
+            if ((winder != null && winder.IsFrozen) || (remoteWinder != null && remoteWinder.IsFrozen))
+                return;
 
             int windLayer = animator.GetLayerIndex("Wind Layer");
             if (windLayer >= 0)

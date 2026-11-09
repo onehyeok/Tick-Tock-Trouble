@@ -107,6 +107,9 @@ public class WinderMove : MonoBehaviour
 
     public bool IsFrozen => freezeTimeLeft > 0f;
     public bool IsGoldenClub => goldClubActive;
+    /// <summary>황금 몽둥이·덫을 들고 있거나 쓰는 중 (아직 안 때림 / 아직 설치 안 함)</summary>
+    public bool SpringPaused => goldClubActive || trapPlacing
+        || ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0);
     public bool IsPlacingTrap => trapPlacing;
 
     public Transform Spring
@@ -781,6 +784,9 @@ public class WinderMove : MonoBehaviour
         // 문이 열리기 전: 태엽이 돌지 않음 — 능력도 못 얻음
         if (!RoundManager.DoorOpen)
             return;
+        // 황금 몽둥이·덫을 갖고 있거나 R 로 꺼낸 뒤 아직 안 썼으면 태엽 멈춤 (때리거나 설치해야 다시 돎)
+        if (SpringPaused)
+            return;
 
         springDegrees += 360f / FullTurnSeconds * Time.deltaTime;
         while (springDegrees >= 360f)
@@ -792,9 +798,11 @@ public class WinderMove : MonoBehaviour
         spring.localRotation = springBaseRotation * Quaternion.Euler(0f, -springDegrees, 0f);
     }
 
+    const float GoldChance = 0.2f; // 무작위 능력: 황금 몽둥이 20% / 덫 40% / 달리기 40%
+
     void CompleteSpringTurn()
     {
-        // Brick 풀: 달리기 + 황금 몽둥이만 (드러눕기/기절 제외)
+        // Brick 풀: 달리기 + 덫 + 황금 몽둥이 (드러눕기/기절 제외)
         // 황금/덫은 레벨 없음 — 이미 들고 있으면 다음 턴까지 유지
         if ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0)
             return;
@@ -804,7 +812,8 @@ public class WinderMove : MonoBehaviour
 
         if (abilityLevel <= 0)
         {
-            abilityKind = Random.value < 0.5f ? AbilityRun : AbilityGold;
+            float roll = Random.value;
+            abilityKind = roll < GoldChance ? AbilityGold : (roll < GoldChance + (1f - GoldChance) * 0.5f ? AbilityTrap : AbilityRun);
             abilityLevel = 1;
         }
         else if (abilityKind == AbilityRun)

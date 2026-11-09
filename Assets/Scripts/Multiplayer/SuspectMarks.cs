@@ -30,6 +30,11 @@ public static class SuspectMarks
         m.until = Time.time + ShowSeconds;
     }
 
+    public static void Clear()
+    {
+        marks.Clear();
+    }
+
     /// <summary>매 프레임 (RoundManager): 테두리 유지 / 3초 지나면 지움</summary>
     public static void Tick()
     {

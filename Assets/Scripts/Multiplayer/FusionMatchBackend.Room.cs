@@ -39,7 +39,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             { "nicks", nickname }
         };
 
-        NetworkRunner r = EnsureRunner();
+        NetworkRunner r = await FreshRunner();
+        if (quitting)
+            return false;
         StartGameResult result = await r.StartGame(new StartGameArgs
         {
             GameMode = GameMode.Host,
@@ -49,6 +51,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
             IsOpen = true,
             IsVisible = true,
+            DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결 (학교망처럼 직접 연결이 막힌 곳 대비)
             StartGameCancellationToken = quitCts.Token
         });
         if (quitting)
@@ -76,6 +79,19 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         UpdateSessionProps();
         RoomChanged?.Invoke();
         return true;
+    }
+
+    /// <summary>방 만들기·입장 전용 새 연결. 로비(방 목록)용 연결은 끊음 — 로비 연결을 그대로 쓰면 방 연결이 가끔 안 붙음</summary>
+    async Task<NetworkRunner> FreshRunner()
+    {
+        if (runner != null && !runner.IsShutdown)
+        {
+            NetworkRunner old = runner;
+            runner = null; // 먼저 비워서 이 연결이 끊길 때의 처리(OnShutdown)가 무시되게
+            inLobby = false;
+            await old.Shutdown();
+        }
+        return EnsureRunner();
     }
 
     public void JoinRoom(string roomName, string password)
@@ -111,13 +127,16 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             return false;
         busy = true;
 
-        NetworkRunner r = EnsureRunner();
+        NetworkRunner r = await FreshRunner();
+        if (quitting)
+            return false;
         StartGameResult result = await r.StartGame(new StartGameArgs
         {
             GameMode = GameMode.Client,
             SessionName = roomName,
             ConnectionToken = Encoding.UTF8.GetBytes(password ?? ""),
             SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
+            DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결 (직접 연결 시도 단계에서 멈추는 문제 피함)
             StartGameCancellationToken = quitCts.Token
         });
         if (quitting)

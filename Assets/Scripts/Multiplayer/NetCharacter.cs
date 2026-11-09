@@ -73,6 +73,10 @@ public class NetCharacter : NetworkBehaviour
     [Networked] public byte ParamCount { get; set; }
     /// <summary>이 플레이어가 관전 중인 틱토이 플레이어 id (0 = 안 봄) → 관전자 수 표시에 사용</summary>
     [Networked] public int Spectating { get; set; }
+    /// <summary>방장이 기록하는 지금 라운드·승수. 참가자가 "다음 라운드" 메시지를 놓쳐도 이 값으로 따라감</summary>
+    [Networked] public int MatchRound { get; set; }
+    [Networked] public int MatchTickToyWins { get; set; }
+    [Networked] public int MatchWinderWins { get; set; }
     [Networked, Capacity(6)] public NetworkArray<int> Hashes => default;
     [Networked, Capacity(6)] public NetworkArray<float> Weights => default;
     [Networked, Capacity(12)] public NetworkArray<float> Params => default;
@@ -115,6 +119,10 @@ public class NetCharacter : NetworkBehaviour
     {
         if (!HasStateAuthority)
             return;
+
+        MatchRound = MatchContext.Active ? MatchContext.Round : 0;
+        MatchTickToyWins = MatchContext.TickToyWins;
+        MatchWinderWins = MatchContext.WinderWins;
 
         // 방장: 맵 AI
         if (NetId >= AiIdBase)

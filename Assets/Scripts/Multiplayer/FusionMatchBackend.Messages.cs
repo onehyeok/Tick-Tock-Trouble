@@ -92,12 +92,15 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             {
                 byte kind = rd.ReadByte();
                 int origin = rd.ReadInt32();
+                int round = rd.ReadInt32();
                 long start = rd.BaseStream.Position;
                 byte[] payload = rd.ReadBytes((int)(rd.BaseStream.Length - start));
+                if (round != MatchContext.Round)
+                    break; // 이전 라운드에 일어난 일이 늦게 도착 → 버림
                 // 방장 화면에 적용 + 다른 사람들에게 그대로 전달
                 using (BinaryReader pr = new BinaryReader(new MemoryStream(payload)))
                     ApplyGameEvent(kind, origin, pr);
-                SendToClients(Msg(H2C_Event, w => { w.Write(kind); w.Write(origin); w.Write(payload); }));
+                SendToClients(Msg(H2C_Event, w => { w.Write(kind); w.Write(origin); w.Write(round); w.Write(payload); }));
                 break;
             }
             case C2H_Duplicate:
@@ -143,11 +146,14 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
             case H2C_LoadMap:
             {
-                Debug.Log("[Fusion] 다음 라운드 맵 로딩");
-                MatchContext.Round = rd.ReadInt32();
+                int round = rd.ReadInt32();
                 MatchContext.TickToyWins = rd.ReadInt32();
                 MatchContext.WinderWins = rd.ReadInt32();
-                LoadMatchScene(rd.ReadString());
+                string scene = rd.ReadString();
+                if (round <= MatchContext.Round)
+                    break; // 이미 그 라운드로 넘어감 (네트워크 값으로 먼저 따라간 경우) → 두 번 불러오지 않음
+                MatchContext.Round = round;
+                LoadMatchScene(scene);
                 break;
             }
 
@@ -170,6 +176,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                     ClientCatchUpRound(hostRound, ttWins, wWins);
                     break;
                 }
+                // 늦게 도착한 '이전 라운드' 상태(예: 이전 판의 결과 화면)는 버림.
+                // 이걸 새 라운드에 적용하면 결과 화면이 다시 떠서 그대로 멈춰 있었음
+                if (hostRound < MatchContext.Round)
+                    break;
                 if (!sceneLoading)
                     RoundManager.Instance?.ApplyNetPhase(phase, left, winderWon, ttWins, wWins);
                 break;
@@ -190,8 +200,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             {
                 byte kind = rd.ReadByte();
                 int origin = rd.ReadInt32();
-                if (MatchContext.Active)
-                    ApplyGameEvent(kind, origin, rd);
+                int round = rd.ReadInt32();
+                if (MatchContext.Active && round == MatchContext.Round && !sceneLoading)
+                    ApplyGameEvent(kind, origin, rd); // 이전 라운드 일(덫 설치 등)이 새 맵에 생기지 않게
                 break;
             }
 

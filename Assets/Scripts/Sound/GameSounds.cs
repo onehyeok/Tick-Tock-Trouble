@@ -5,7 +5,8 @@ public enum SoundId : byte
 {
     None = 0,
     PlayPossum = 1, // 틱토이: 기절한 척하기
-    GameStart = 2,  // 문이 열릴 때 (GAME START)
+    GameStart = 2,  // 문이 열릴 때 (GAME START) 효과음 — GameStart.mp3
+    GameMusic = 3,  // 게임 맵 배경음악 (들어가자마자 반복) — TTTGame.mp3
 }
 
 /// <summary>누가 듣는 소리인지</summary>
