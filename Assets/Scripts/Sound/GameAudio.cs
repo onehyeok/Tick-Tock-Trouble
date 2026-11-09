@@ -42,6 +42,7 @@ public static class GameAudio
             source.playOnAwake = false;
             source.spatialBlend = 0f; // 화면 소리 (거리와 상관없이 같은 크기)
         }
-        source.PlayOneShot(e.clip, e.volume);
+        GameSettings.EnsureLoaded();
+        source.PlayOneShot(e.clip, e.volume * GameSettings.GameVolume / 100f); // ESC 설정의 인게임 사운드
     }
 }

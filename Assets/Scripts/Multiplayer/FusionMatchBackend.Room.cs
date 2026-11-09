@@ -51,7 +51,6 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
             IsOpen = true,
             IsVisible = true,
-            DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결 (학교망처럼 직접 연결이 막힌 곳 대비)
             StartGameCancellationToken = quitCts.Token
         });
         if (quitting)
@@ -154,9 +153,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             {
                 GameMode = GameMode.Client,
                 SessionName = roomName,
-                ConnectionToken = Encoding.UTF8.GetBytes(password ?? ""),
+                // 암호가 없으면 null (빈 배열을 넣으면 Fusion 이 0바이트를 할당하려다 "Trying to allocate < 0 bytes" 오류로 연결이 멈춤)
+                ConnectionToken = string.IsNullOrEmpty(password) ? null : Encoding.UTF8.GetBytes(password),
                 SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
-                DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결
                 StartGameCancellationToken = quitCts.Token
             });
 
@@ -518,7 +517,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         current.password = rd.ReadString();
         players.Clear();
         int n = rd.ReadByte();
-        int me = LocalPlayerId;
+        // 입장 확인 중(아직 InRoom 전)에도 '나'를 알아볼 수 있게 러너에서 직접 (LocalPlayerId 는 InRoom 전엔 0)
+        int me = runner != null ? runner.LocalPlayer.PlayerId : 0;
         for (int i = 0; i < n; i++)
         {
             RoomPlayer p = new RoomPlayer

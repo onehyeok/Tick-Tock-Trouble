@@ -40,12 +40,27 @@ public class BackgroundMusic : MonoBehaviour
         source.spatialBlend = 0f;
         source.volume = volume;
         SceneManager.sceneLoaded += OnSceneLoaded;
+        GameSettings.EnsureLoaded();
+        GameSettings.VolumeChanged += ApplyVolume;
         ApplyScene(SceneManager.GetActiveScene());
+    }
+
+    float gameClipVolume = 1f;
+
+    /// <summary>ESC 설정의 로비 사운드 / 인게임 사운드 크기 반영</summary>
+    void ApplyVolume()
+    {
+        if (source == null)
+            return;
+        source.volume = lobbyPlaying
+            ? volume * GameSettings.LobbyVolume / 100f
+            : volume * gameClipVolume * GameSettings.GameVolume / 100f;
     }
 
     void OnDestroy()
     {
         SceneManager.sceneLoaded -= OnSceneLoaded;
+        GameSettings.VolumeChanged -= ApplyVolume;
         if (instance == this)
             instance = null;
     }
@@ -78,7 +93,7 @@ public class BackgroundMusic : MonoBehaviour
         if (lobbyPlaying || lobbyPlaylist == null || lobbyPlaylist.Length == 0)
             return;
         lobbyPlaying = true;
-        source.volume = volume;
+        ApplyVolume();
         source.loop = lobbyPlaylist.Length == 1;
         lobbyRoutine = StartCoroutine(PlayList(lobbyPlaylist));
     }
@@ -102,7 +117,8 @@ public class BackgroundMusic : MonoBehaviour
         instance.StopMusic();
         instance.source.clip = clip;
         instance.source.loop = true;
-        instance.source.volume = instance.volume * clipVolume;
+        instance.gameClipVolume = clipVolume;
+        instance.ApplyVolume();
         instance.source.Play();
     }
 

@@ -6,14 +6,14 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem.UI;
 #endif
 
-/// <summary>ESC 설정창. 좌우 마우스 감도 슬라이더 + 숫자 입력, 게임 중엔 "로비로 나가기" 버튼.</summary>
+/// <summary>ESC 설정창. 좌우 감도 · 로비 사운드 · 인게임 사운드 (슬라이더 + 숫자 입력), 게임 중엔 "로비로 나가기" 버튼.</summary>
 public class SettingsMenu : MonoBehaviour
 {
     static SettingsMenu instance;
 
     GameObject root;
-    Slider horizontalSlider;
-    InputField horizontalInput;
+    /// <summary>창을 열 때 저장된 값으로 다시 맞춤 (줄마다 하나)</summary>
+    System.Action refreshRows;
     GameObject exitButton;
     bool syncing;
 
@@ -95,10 +95,7 @@ public class SettingsMenu : MonoBehaviour
     void RefreshFromSettings()
     {
         syncing = true;
-        if (horizontalSlider != null)
-            horizontalSlider.value = GameSettings.HorizontalSensitivity;
-        if (horizontalInput != null)
-            horizontalInput.text = Mathf.RoundToInt(GameSettings.HorizontalSensitivity).ToString();
+        refreshRows?.Invoke();
         syncing = false;
     }
 
@@ -132,7 +129,7 @@ public class SettingsMenu : MonoBehaviour
 
         // 주황 테두리 + 크림 판
         Image border = UIKit.Panel(root.transform, "Panel", UIKit.Orange, false);
-        border.rectTransform.At(new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 360f));
+        border.rectTransform.At(new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640f, 520f));
         Shadow shadow = border.gameObject.AddComponent<Shadow>();
         shadow.effectColor = new Color(0f, 0f, 0f, 0.3f);
         shadow.effectDistance = new Vector2(0f, -10f);
@@ -141,11 +138,16 @@ public class SettingsMenu : MonoBehaviour
         Text title = UIKit.Label(panel, "Title", "설정", 48, UIKit.Orange).Outlined(UIKit.Brown, 3f);
         title.rectTransform.At(new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(560f, 64f));
 
-        BuildSensitivityRow(panel, "좌우 감도", -110f);
+        BuildSliderRow(panel, "좌우 감도", -100f, GameSettings.MinSensitivity, GameSettings.MaxSensitivity,
+            () => GameSettings.HorizontalSensitivity, GameSettings.SetHorizontalSensitivity);
+        BuildSliderRow(panel, "로비 사운드", -175f, 0f, 100f,
+            () => GameSettings.LobbyVolume, GameSettings.SetLobbyVolume);
+        BuildSliderRow(panel, "인게임 사운드", -250f, 0f, 100f,
+            () => GameSettings.GameVolume, GameSettings.SetGameVolume);
 
         Button exit = UIKit.Button(panel, "ExitToLobbyButton", "로비로 나가기", UIKit.Orange, Color.white, 34);
         exit.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
-        exit.GetComponent<RectTransform>().At(new Vector2(0.5f, 1f), new Vector2(0f, -200f), new Vector2(320f, 70f));
+        exit.GetComponent<RectTransform>().At(new Vector2(0.5f, 1f), new Vector2(0f, -345f), new Vector2(320f, 70f));
         exit.onClick.AddListener(ExitToLobby);
         exitButton = exit.gameObject;
 
@@ -153,15 +155,18 @@ public class SettingsMenu : MonoBehaviour
         hint.rectTransform.At(new Vector2(0.5f, 0f), new Vector2(0f, 14f), new Vector2(560f, 36f));
     }
 
-    void BuildSensitivityRow(Transform parent, string label, float y)
+    /// <summary>한 줄: 이름 + 슬라이더 + 숫자 입력칸. 값을 바꾸면 바로 저장</summary>
+    void BuildSliderRow(Transform parent, string label, float y, float min, float max,
+        System.Func<float> getValue, System.Action<float> setValue)
     {
         RectTransform row = UIKit.Rect(parent, label + "Row").At(new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(560f, 56f));
 
-        Text labelText = UIKit.Label(row, "Label", label, 30, UIKit.Brown, TextAnchor.MiddleLeft);
-        labelText.rectTransform.At(new Vector2(0f, 0.5f), Vector2.zero, new Vector2(140f, 56f));
+        Text labelText = UIKit.Label(row, "Label", label, 27, UIKit.Brown, TextAnchor.MiddleLeft);
+        labelText.horizontalOverflow = HorizontalWrapMode.Overflow; // "인게임 사운드"가 두 줄로 안 꺾이게
+        labelText.rectTransform.At(new Vector2(0f, 0.5f), Vector2.zero, new Vector2(160f, 56f));
 
         // 슬라이더: 연한 바탕 + 주황 채움 + 갈색 손잡이
-        RectTransform sliderRt = UIKit.Rect(row, "Slider").At(new Vector2(0f, 0.5f), new Vector2(150f, 0f), new Vector2(290f, 22f));
+        RectTransform sliderRt = UIKit.Rect(row, "Slider").At(new Vector2(0f, 0.5f), new Vector2(170f, 0f), new Vector2(270f, 22f));
         Slider slider = sliderRt.gameObject.AddComponent<Slider>();
         UIKit.Panel(sliderRt, "Background", UIKit.CreamDark, false).rectTransform.Fill();
         RectTransform fillArea = UIKit.Rect(sliderRt, "Fill Area").Fill();
@@ -175,10 +180,10 @@ public class SettingsMenu : MonoBehaviour
         slider.fillRect = fill.rectTransform;
         slider.handleRect = handle.rectTransform;
         slider.direction = Slider.Direction.LeftToRight;
-        slider.minValue = GameSettings.MinSensitivity;
-        slider.maxValue = GameSettings.MaxSensitivity;
+        slider.minValue = min;
+        slider.maxValue = max;
         slider.wholeNumbers = true;
-        slider.value = GameSettings.HorizontalSensitivity;
+        slider.value = getValue();
 
         // 숫자 입력칸 (흰 바탕 · 갈색 글자)
         InputField input = UIKit.Input(row, "ValueInput", "0", 28);
@@ -198,7 +203,7 @@ public class SettingsMenu : MonoBehaviour
             syncing = true;
             int rounded = Mathf.RoundToInt(value);
             input.text = rounded.ToString();
-            GameSettings.SetHorizontalSensitivity(rounded);
+            setValue(rounded);
             syncing = false;
         });
 
@@ -208,15 +213,18 @@ public class SettingsMenu : MonoBehaviour
                 return;
             if (!int.TryParse(text, out int parsed))
                 parsed = Mathf.RoundToInt(slider.value);
-            parsed = Mathf.Clamp(parsed, (int)GameSettings.MinSensitivity, (int)GameSettings.MaxSensitivity);
+            parsed = Mathf.Clamp(parsed, (int)min, (int)max);
             syncing = true;
             slider.value = parsed;
             input.text = parsed.ToString();
-            GameSettings.SetHorizontalSensitivity(parsed);
+            setValue(parsed);
             syncing = false;
         });
 
-        horizontalSlider = slider;
-        horizontalInput = input;
+        refreshRows += () =>
+        {
+            slider.value = getValue();
+            input.text = Mathf.RoundToInt(getValue()).ToString();
+        };
     }
 }

@@ -31,7 +31,7 @@
         },
         "InputTransferMode": 0,
         "SimulationUpdateTimeMode": 0,
-        "PlayerCount": 10,
+        "PlayerCount": 16,
         "TickRateSelection": {
             "Client": 0,
             "ClientSendInterval": 0,
