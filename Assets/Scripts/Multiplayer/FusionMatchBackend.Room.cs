@@ -121,29 +121,94 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         _ = JoinAsync(open[UnityEngine.Random.Range(0, open.Count)].name, "", false);
     }
 
+    const int JoinAttempts = 3;
+    const float JoinTimeoutSeconds = 15f; // 보통 몇 초 안에 연결됨. 이보다 오래 걸리면 멈춘 것으로 봄
+    const float RoomInfoTimeoutSeconds = 6f; // 들어간 뒤 방장이 방 정보를 보내 주기까지 기다리는 시간
+    bool joinStuck;
+
+    /// <summary>방 연결 중 Fusion 내부 오류가 나면 바로 알아채서 기다리지 않고 다시 시도</summary>
+    void WatchJoinError(string condition, string stackTrace, UnityEngine.LogType type)
+    {
+        if (type == UnityEngine.LogType.Exception && condition != null && condition.Contains("Trying to allocate"))
+            joinStuck = true;
+    }
+
     async Task<bool> JoinAsync(string roomName, string password, bool silent)
     {
         if (busy || InRoom || quitting)
             return false;
         busy = true;
 
-        NetworkRunner r = await FreshRunner();
-        if (quitting)
-            return false;
-        StartGameResult result = await r.StartGame(new StartGameArgs
+        // Fusion 2.1.4 버그: 연결 순간 내부 오류("Trying to allocate < 0 bytes")가 가끔 나면 연결이 멈춤 (운에 따라 됨/안 됨).
+        // → 멈추면 그 연결을 끊고 새 연결로 다시 시도 (최대 3번). 암호 틀림·방 꽉 참·방 없음은 다시 해도 같으니 바로 실패.
+        StartGameResult result = null;
+        bool joined = false;
+        for (int attempt = 1; attempt <= JoinAttempts; attempt++)
         {
-            GameMode = GameMode.Client,
-            SessionName = roomName,
-            ConnectionToken = Encoding.UTF8.GetBytes(password ?? ""),
-            SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
-            DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결 (직접 연결 시도 단계에서 멈추는 문제 피함)
-            StartGameCancellationToken = quitCts.Token
-        });
-        if (quitting)
-            return false;
+            NetworkRunner r = await FreshRunner();
+            if (quitting)
+                return false;
+            joinStuck = false;
+            Application.logMessageReceived += WatchJoinError;
+            Task<StartGameResult> start = r.StartGame(new StartGameArgs
+            {
+                GameMode = GameMode.Client,
+                SessionName = roomName,
+                ConnectionToken = Encoding.UTF8.GetBytes(password ?? ""),
+                SceneManager = r.GetComponent<NetworkSceneManagerDefault>(),
+                DisableNATPunchthrough = true, // 처음부터 Photon 중계 서버로 연결
+                StartGameCancellationToken = quitCts.Token
+            });
+
+            // 끝나거나, 그 오류가 나거나, 너무 오래 걸릴 때까지 기다림
+            float until = Time.realtimeSinceStartup + JoinTimeoutSeconds;
+            while (!start.IsCompleted && !joinStuck && Time.realtimeSinceStartup < until && !quitting)
+                await Task.Yield();
+            Application.logMessageReceived -= WatchJoinError;
+            bool killed = false;
+            if (!start.IsCompleted || joinStuck)
+            {
+                Debug.LogWarning("[Fusion] 방 연결이 멈춰서 다시 시도해요 (" + attempt + "/" + JoinAttempts + ")");
+                killed = true;
+                await r.Shutdown(); // 멈춘 연결을 끊음
+            }
+            result = await start;
+            if (quitting)
+                return false;
+            // 끊은 연결은 결과가 '성공'으로 와도 쓰면 안 됨 (방장과 연결 안 된 채로 방 화면만 뜨고 아무것도 동기화 안 됐음)
+            joined = result.Ok && !killed && !r.IsShutdown;
+            // 방장에게 인사를 보내고 방 정보(인원·라운드)가 실제로 오는지 확인 → 안 오면 연결이 안 된 것 → 다시 시도
+            if (joined)
+            {
+                players.Clear();
+                current = new RoomSettings { roomName = roomName };
+                SendToHost(Msg(C2H_Hello, w => w.Write(nickname)));
+                float wait = Time.realtimeSinceStartup + RoomInfoTimeoutSeconds;
+                while (players.Count == 0 && !r.IsShutdown && Time.realtimeSinceStartup < wait && !quitting)
+                    await Task.Yield();
+                if (quitting)
+                    return false;
+                if (players.Count > 0)
+                    break;
+                Debug.LogWarning("[Fusion] 방에 들어갔지만 방장 응답이 없어서 다시 시도해요 (" + attempt + "/" + JoinAttempts + ")");
+                joined = false;
+                killed = true;
+                if (!r.IsShutdown)
+                    await r.Shutdown();
+            }
+
+            runner = null;
+            bool retry = killed
+                || (result.ShutdownReason != ShutdownReason.ConnectionRefused
+                    && result.ShutdownReason != ShutdownReason.GameIsFull
+                    && result.ShutdownReason != ShutdownReason.GameNotFound);
+            if (!retry || attempt == JoinAttempts)
+                break;
+            await Task.Delay(1000);
+        }
         busy = false;
 
-        if (!result.Ok)
+        if (!joined)
         {
             runner = null;
             if (silent)
@@ -166,9 +231,6 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         // 위치·애니메이션을 자주 보내므로 신뢰성 데이터 전송 속도를 최대로 (기본값이 낮아 밀리면 동기화가 안 됨)
         RaiseReliableSendRate();
         ChatLog.Clear();
-        current = new RoomSettings { roomName = roomName };
-        players.Clear();
-        SendToHost(Msg(C2H_Hello, w => w.Write(nickname)));
         RoomChanged?.Invoke();
         return true;
     }
