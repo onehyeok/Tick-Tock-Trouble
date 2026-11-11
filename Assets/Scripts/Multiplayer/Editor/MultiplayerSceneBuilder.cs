@@ -446,7 +446,48 @@ public static class MultiplayerSceneBuilder
         // 오른쪽 아래 채팅창 (준비 버튼 위, 살짝 투명)
         ChatUIBuilder.Build(c, false, new Vector2(1f, 0f), new Vector2(-110f, 205f), new Vector2(480f, 190f));
 
+        PlayerMenuBuilder.Build(c, ui);
+
         panel.gameObject.SetActive(false);
+    }
+}
+
+/// <summary>방장이 플레이어 이름을 우클릭하면 뜨는 메뉴 (방장 넘기기 / 강퇴하기). 바깥을 누르면 닫힘</summary>
+public static class PlayerMenuBuilder
+{
+    public static void Build(Transform roomPanel, LobbyUI ui)
+    {
+        Image blocker = UIKit.Panel(roomPanel, "PlayerMenu", new Color(0f, 0f, 0f, 0f), false);
+        blocker.rectTransform.Fill();
+        ui.playerMenu = blocker.gameObject;
+        ui.playerMenuCloseButton = blocker.gameObject.AddComponent<Button>();
+        ui.playerMenuCloseButton.transition = Selectable.Transition.None;
+
+        Image card = UIKit.Panel(blocker.transform, "Card", UIKit.Cream);
+        card.rectTransform.anchorMin = card.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        card.rectTransform.pivot = new Vector2(0f, 1f);
+        card.rectTransform.sizeDelta = new Vector2(360f, 300f);
+        Shadow cardShadow = card.gameObject.AddComponent<Shadow>();
+        cardShadow.effectColor = new Color(0f, 0f, 0f, 0.3f);
+        cardShadow.effectDistance = new Vector2(0f, -8f);
+        Outline cardLine = card.gameObject.AddComponent<Outline>();
+        cardLine.effectColor = UIKit.Brown;
+        cardLine.effectDistance = new Vector2(3f, -3f);
+        ui.playerMenuCard = card.rectTransform;
+        card.gameObject.AddComponent<Button>().transition = Selectable.Transition.None; // 카드 빈 곳을 눌러도 닫히지 않게
+
+        ui.playerMenuTitle = UIKit.Label(card.transform, "Title", "닉네임", 40, UIKit.Brown);
+        ui.playerMenuTitle.rectTransform.At(new Vector2(0.5f, 1f), new Vector2(0f, -20f), new Vector2(330f, 60f));
+
+        ui.makeHostButton = UIKit.Button(card.transform, "MakeHostButton", "방장 넘기기", UIKit.Orange, Color.white, 40);
+        ui.makeHostButton.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
+        ((RectTransform)ui.makeHostButton.transform).At(new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(300f, 86f));
+
+        ui.kickButton = UIKit.Button(card.transform, "KickButton", "강퇴하기", UIKit.Pink, Color.white, 40);
+        ui.kickButton.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
+        ((RectTransform)ui.kickButton.transform).At(new Vector2(0.5f, 1f), new Vector2(0f, -200f), new Vector2(300f, 86f));
+
+        blocker.gameObject.SetActive(false);
     }
 }
 

@@ -140,6 +140,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 ReadRoom(rd);
                 string scene = rd.ReadString();
                 MatchContext.BeginMatch(current, players, LocalPlayerId);
+                matchSawNet = false;
                 LoadMatchScene(scene);
                 break;
             }
@@ -153,6 +154,31 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 if (round <= MatchContext.Round)
                     break; // 이미 그 라운드로 넘어감 (네트워크 값으로 먼저 따라간 경우) → 두 번 불러오지 않음
                 MatchContext.Round = round;
+                RefreshMatchRoster();
+                LoadMatchScene(scene);
+                break;
+            }
+
+            case H2C_JoinMatch:
+            {
+                // 게임 중에 들어옴: 이번 라운드를 뛰는 사람만 경기 명단에 (나는 빠짐 → 관전) → 지금 맵으로
+                ReadRoom(rd);
+                string scene = rd.ReadString();
+                int round = rd.ReadInt32();
+                int ttWins = rd.ReadInt32();
+                int wWins = rd.ReadInt32();
+                HashSet<int> playing = new HashSet<int>();
+                int n = rd.ReadByte();
+                for (int i = 0; i < n; i++)
+                    playing.Add(rd.ReadInt32());
+                // (아직 입장 처리 중일 수 있어 내 id 는 연결에서 직접)
+                MatchContext.BeginMatch(current, players, runner != null ? runner.LocalPlayer.PlayerId : LocalPlayerId);
+                MatchContext.Players.RemoveAll(p => !playing.Contains(p.id));
+                MatchContext.AssignRolesFromTeams();
+                MatchContext.Round = round;
+                MatchContext.TickToyWins = ttWins;
+                MatchContext.WinderWins = wWins;
+                matchSawNet = false;
                 LoadMatchScene(scene);
                 break;
             }
@@ -160,30 +186,6 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             case H2C_Return:
                 DoReturnToRoom();
                 break;
-
-            case H2C_Phase:
-            {
-                int phase = rd.ReadByte();
-                float left = rd.ReadSingle();
-                bool winderWon = rd.ReadBoolean();
-                int ttWins = rd.ReadInt32();
-                int wWins = rd.ReadInt32();
-                netAliveTickToys = rd.ReadByte();
-                netAliveWinders = rd.ReadByte();
-                int hostRound = rd.ReadInt32();
-                if (hostRound > MatchContext.Round)
-                {
-                    ClientCatchUpRound(hostRound, ttWins, wWins);
-                    break;
-                }
-                // 늦게 도착한 '이전 라운드' 상태(예: 이전 판의 결과 화면)는 버림.
-                // 이걸 새 라운드에 적용하면 결과 화면이 다시 떠서 그대로 멈춰 있었음
-                if (hostRound < MatchContext.Round)
-                    break;
-                if (!sceneLoading)
-                    RoundManager.Instance?.ApplyNetPhase(phase, left, winderWon, ttWins, wWins);
-                break;
-            }
 
             case H2C_Hit:
                 RoundManager.Instance?.ApplyNetHit(rd.ReadInt32());
@@ -208,6 +210,14 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
             case H2C_Abort:
                 RoundManager.Instance?.ShowMatchAbort(rd.ReadString());
+                break;
+
+            case H2C_HostTransfer:
+                transferToId = rd.ReadInt32(); // 곧 방장이 나가면 이 사람이 새 방장
+                break;
+
+            case H2C_Kicked:
+                OnKicked();
                 break;
         }
     }

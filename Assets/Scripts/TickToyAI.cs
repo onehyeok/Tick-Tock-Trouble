@@ -83,6 +83,83 @@ public class TickToyAI : MonoBehaviour
     public int Hp => hp;
     public bool IsDead => dead;
 
+    // ---------------- 와인더 명령하기: 가만히 있다가 이모트 ----------------
+    static readonly string[] EmoteStates = { "Greeting", "Dance1", "Dance2" }; // Z / X / C
+    float commandEmoteAt = -1f;
+    int commandEmote;
+    int emoteLayer = -1;
+    string emoteState;
+    float emoteStart;
+    float emoteEnd = -1f;
+
+    /// <summary>delay 초 동안 가만히(Idle) 있다가 이모트(0 = Z 인사, 1 = X 춤1, 2 = C 춤2)</summary>
+    public void Command(float delay, int emote)
+    {
+        if (dead)
+            return;
+        StopEmote();
+        EnterIdle();
+        stateTimer = delay + 0.5f;
+        commandEmoteAt = Time.time + delay;
+        commandEmote = Mathf.Clamp(emote, 0, EmoteStates.Length - 1);
+    }
+
+    void TickCommand()
+    {
+        if (commandEmoteAt > 0f)
+        {
+            if (state != AiState.Idle)
+                EnterIdle(); // 명령 중엔 계속 가만히
+            stateTimer = Mathf.Max(stateTimer, 0.5f);
+            if (Time.time >= commandEmoteAt)
+            {
+                commandEmoteAt = -1f;
+                PlayEmote(commandEmote);
+            }
+        }
+
+        if (emoteEnd < 0f || animator == null)
+            return;
+        stateTimer = Mathf.Max(stateTimer, 0.5f); // 이모트가 끝날 때까지 가만히
+        // 애니메이터에서 실제 이모트 길이를 읽어 끝나는 시간을 맞춤
+        AnimatorStateInfo info = animator.IsInTransition(emoteLayer) ? animator.GetNextAnimatorStateInfo(emoteLayer) : animator.GetCurrentAnimatorStateInfo(emoteLayer);
+        if (info.shortNameHash == Animator.StringToHash(emoteState) && info.length > 0.05f)
+            emoteEnd = emoteStart + info.length;
+        if (Time.time >= emoteEnd)
+            StopEmote();
+    }
+
+    void PlayEmote(int emote)
+    {
+        if (animator == null)
+            return;
+        bool upper = emote == 0; // 인사는 상체만, 춤은 몸 전체
+        int upperLayer = animator.GetLayerIndex("Emote Upper Layer");
+        int fullLayer = animator.GetLayerIndex("Emote Full Layer");
+        int layer = upper ? upperLayer : fullLayer;
+        if (layer < 0)
+            return;
+        int other = upper ? fullLayer : upperLayer;
+        if (other >= 0)
+            animator.CrossFadeInFixedTime("Empty", 0.05f, other, 0f);
+        animator.SetLayerWeight(layer, 1f);
+        emoteLayer = layer;
+        emoteState = EmoteStates[emote];
+        animator.CrossFadeInFixedTime(emoteState, 0.1f, layer, 0f);
+        emoteStart = Time.time;
+        emoteEnd = Time.time + 3f; // 실제 길이를 읽기 전 임시
+    }
+
+    void StopEmote()
+    {
+        if (emoteEnd < 0f || animator == null)
+            return;
+        emoteEnd = -1f;
+        if (emoteLayer >= 0)
+            animator.CrossFadeInFixedTime("Empty", 0.15f, emoteLayer, 0f);
+        stateTimer = Random.Range(0.3f, 1f);
+    }
+
     /// <summary>분신 스폰 직후 대기 없이 바로 Run.</summary>
     public void BeginMovingNow()
     {
@@ -186,6 +263,7 @@ public class TickToyAI : MonoBehaviour
             return;
         }
 
+        TickCommand();
         switch (state)
         {
             case AiState.Idle:
@@ -857,6 +935,8 @@ public class TickToyAI : MonoBehaviour
 
     void Die()
     {
+        commandEmoteAt = -1f;
+        StopEmote(); // 쓰러질 때 춤이 쓰러지는 동작을 덮지 않게
         dead = true;
         hp = 0;
         currentSpeed = 0f;

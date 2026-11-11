@@ -1,17 +1,11 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 public class TickToyAnimation : MonoBehaviour
 {
     const string EmoteUpperLayerName = "Emote Upper Layer"; // Greeting only + AvatarMask
     const string EmoteFullLayerName = "Emote Full Layer";   // Dance1/2 full body, no mask
-    const string GreetingPath = "Assets/Animations/Greeting.fbx";
-    const string Dance1Path = "Assets/Animations/T_Dance_1/T_Dance_1/T_Dance_1.fbx";
-    const string Dance2Path = "Assets/Animations/T_Dance_2/T_Dance_2/T_Dance_2.fbx";
 
     private Animator animator;
     private TickToyMove move;
@@ -34,15 +28,12 @@ public class TickToyAnimation : MonoBehaviour
     private bool isEmoting;
     private bool emoteKeepLocomotion; // Greeting만 true
     private float emoteEndTime;
-    private bool emoteLengthKnown; // 빌드에선 클립 파일을 못 읽음 → 애니메이터에서 실제 길이를 읽어 옴
+    private bool emoteLengthKnown; // 애니메이터에서 실제 이모트 길이를 읽었는지
     private int emoteUpperLayer = -1;
     private int emoteFullLayer = -1;
 
     [SerializeField] private UnityEvent _OnJump;
     [SerializeField] private float windLegSpread = 11f;
-    [SerializeField] private AnimationClip greetingClip;
-    [SerializeField] private AnimationClip dance1Clip;
-    [SerializeField] private AnimationClip dance2Clip;
 
     void Awake()
     {
@@ -52,7 +43,6 @@ public class TickToyAnimation : MonoBehaviour
             animator.applyRootMotion = false;
         CacheSpineSprings();
         SetSpineSpringsActive(false);
-        EnsureDanceClips();
         CacheEmoteLayer();
 
         if (animator != null && animator.isHuman)
@@ -172,11 +162,11 @@ public class TickToyAnimation : MonoBehaviour
 
         // Z Greeting(상체 마스크) / X·C 풀바디 댄스(마스크 없음)
         if (Input.GetKeyDown(KeyCode.Z))
-            PlayEmote("Greeting", greetingClip, true);
+            PlayEmote("Greeting", true);
         else if (Input.GetKeyDown(KeyCode.X))
-            PlayEmote("Dance1", dance1Clip, false);
+            PlayEmote("Dance1", false);
         else if (Input.GetKeyDown(KeyCode.C))
-            PlayEmote("Dance2", dance2Clip, false);
+            PlayEmote("Dance2", false);
 
         // 풀바디 댄스 중엔 점프/와인드 무시
         if (isEmoting && !emoteKeepLocomotion)
@@ -586,32 +576,7 @@ public class TickToyAnimation : MonoBehaviour
             animator.SetLayerWeight(emoteFullLayer, 1f);
     }
 
-    void EnsureDanceClips()
-    {
-        if (greetingClip == null)
-            greetingClip = LoadFirstAnimationClip(GreetingPath);
-        if (dance1Clip == null)
-            dance1Clip = LoadFirstAnimationClip(Dance1Path);
-        if (dance2Clip == null)
-            dance2Clip = LoadFirstAnimationClip(Dance2Path);
-    }
-
-    static AnimationClip LoadFirstAnimationClip(string assetPath)
-    {
-#if UNITY_EDITOR
-        Object[] assets = AssetDatabase.LoadAllAssetsAtPath(assetPath);
-        for (int i = 0; i < assets.Length; i++)
-        {
-            AnimationClip clip = assets[i] as AnimationClip;
-            if (clip == null || clip.name.StartsWith("__preview__"))
-                continue;
-            return clip;
-        }
-#endif
-        return null;
-    }
-
-    void PlayEmote(string stateName, AnimationClip clip, bool upperBodyOnly)
+    void PlayEmote(string stateName, bool upperBodyOnly)
     {
         if (animator == null || move == null)
             return;
@@ -626,7 +591,6 @@ public class TickToyAnimation : MonoBehaviour
             return;
         }
 
-        EnsureDanceClips();
         StopEmote();
 
         // 다른 쪽 레이어는 Empty로
@@ -646,9 +610,9 @@ public class TickToyAnimation : MonoBehaviour
         currentEmote = stateName;
         emoteStartTime = Time.time;
         emoteKeepLocomotion = upperBodyOnly;
-        float len = clip != null ? clip.length : 2f;
-        emoteEndTime = Time.time + Mathf.Max(0.2f, len);
-        emoteLengthKnown = clip != null;
+        // 실제 길이는 애니메이터에서 읽어 맞춤 (읽기 전까지 임시 2초)
+        emoteEndTime = Time.time + 2f;
+        emoteLengthKnown = false;
         animator.SetBool("IsWinding", false);
         move.IsWinding = false;
         SetSpineSpringsActive(false);

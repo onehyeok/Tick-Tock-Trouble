@@ -37,7 +37,7 @@ public class RoomInfo
     public bool inGame;
     public List<string> nicknames = new List<string>();
 
-    public bool IsJoinable => !inGame && players < maxPlayers;
+    public bool IsJoinable => players < maxPlayers; // 게임 중이어도 자리가 있으면 들어감 (그 라운드는 관전)
 }
 
 /// <summary>방 안 플레이어</summary>

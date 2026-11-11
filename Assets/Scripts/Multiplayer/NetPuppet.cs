@@ -29,6 +29,7 @@ public struct NetPose
     public int[] hashes;   // 레이어별 현재 상태 (점프·공격·감정표현 포함)
     public float[] weights; // 레이어 1~3 가중치 (0번은 항상 1)
     public float[] prm;
+    public float spring; // 와인더 등 태엽 각도 (0~360)
 
     static readonly Dictionary<int, AnimatorControllerParameter[]> ParamCache = new Dictionary<int, AnimatorControllerParameter[]>();
     static readonly List<float> CaptureBuffer = new List<float>(MaxParams);
@@ -161,6 +162,8 @@ public class NetPuppet : MonoBehaviour
     Transform winderSpring;
     Quaternion winderSpringBase;
     float winderSpringDeg;
+    float targetSpringDeg;
+    bool springSynced;
     int windingParam;
     int flags;
     Transform normalWeapon;
@@ -385,6 +388,7 @@ public class NetPuppet : MonoBehaviour
     {
         targetPos = pose.pos;
         targetYaw = pose.yaw;
+        targetSpringDeg = pose.spring;
         Alive = pose.alive;
         ApplyFlags(pose.flags);
 
@@ -516,10 +520,20 @@ public class NetPuppet : MonoBehaviour
 
         UpdateFace();
 
-        // 와인더 등 태엽은 천천히 계속 돌아감 (10초에 한 바퀴, 문이 열린 뒤부터)
-        if (winderSpring != null && Alive && RoundManager.DoorOpen && (flags & (NetPose.FlagSpringPaused | NetPose.FlagFrozen)) == 0) // 문 열리기 전·능력 쓰기 전·태엽 정지당함 → 멈춤
+        // 와인더 등 태엽: 그 와인더 화면의 각도를 그대로 따라감 (20초에 한 바퀴).
+        // 받은 값 사이에는 같은 속도로 돌리고, 차이는 부드럽게 맞춤 → 모두의 화면에서 같은 모습
+        if (winderSpring != null)
         {
-            winderSpringDeg = Mathf.Repeat(winderSpringDeg + 36f * Time.deltaTime, 360f);
+            bool turning = Alive && RoundManager.DoorOpen && (flags & (NetPose.FlagSpringPaused | NetPose.FlagFrozen)) == 0; // 문 열리기 전·능력 쓰기 전·태엽 정지당함 → 멈춤
+            if (!springSynced)
+            {
+                winderSpringDeg = targetSpringDeg;
+                springSynced = true;
+            }
+            if (turning)
+                winderSpringDeg += 360f / WinderMove.FullTurnSeconds * Time.deltaTime;
+            winderSpringDeg += Mathf.DeltaAngle(winderSpringDeg, targetSpringDeg) * Mathf.Clamp01(Time.deltaTime * 6f);
+            winderSpringDeg = Mathf.Repeat(winderSpringDeg, 360f);
             winderSpring.localRotation = winderSpringBase * Quaternion.Euler(0f, -winderSpringDeg, 0f);
         }
     }

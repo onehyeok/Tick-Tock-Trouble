@@ -41,6 +41,8 @@ public class RoundManager : MonoBehaviour
     public GameObject LocalPlayerObject => localPlayer;
     public bool LocalIsWinderRole => localWinder != null;
     public int LocalCharIndex { get; private set; }
+    /// <summary>내 와인더 등 태엽 각도 (다른 사람 화면에 같은 각도로)</summary>
+    public float LocalSpringDegrees => localWinder != null ? localWinder.SpringDegrees : 0f;
     public bool LocalAlive => localWinder != null ? !localWinder.IsDead : (localTickToy != null && !localTickToy.IsDead);
 
     /// <summary>내 캐릭터 상태 깃발 (다른 사람 화면에 똑같이 보이게: 정지·달리기·황금 몽둥이·덫)</summary>
@@ -52,7 +54,6 @@ public class RoundManager : MonoBehaviour
             if (localWinder != null)
             {
                 if (localWinder.IsFrozen) f |= NetPose.FlagFrozen;
-                if (localWinder.RunTimeLeft > 0f) f |= NetPose.FlagRunning;
                 if (localWinder.IsGoldenClub) f |= NetPose.FlagGolden;
                 if (localWinder.SpringPaused) f |= NetPose.FlagSpringPaused;
             }
@@ -104,9 +105,13 @@ public class RoundManager : MonoBehaviour
         new GameObject("RoundManager").AddComponent<RoundManager>();
     }
 
+    /// <summary>이 맵(RoundManager)이 진행하는 라운드 번호. 다음 맵을 불러오는 동안에도 바뀌지 않음</summary>
+    public int RoundNumber { get; private set; }
+
     void Awake()
     {
         Instance = this;
+        RoundNumber = MatchContext.Round;
         // 온라인에서 방장이 아니면 맵 AI 는 방장 것을 따라 보여주므로 직접 만들지 않음
         DemoSceneAIBootstrap.SkipAISpawn = NetFollower;
         // 씬에 놓여 있던 테스트용 캐릭터는 Start 전에 꺼 둠
@@ -127,7 +132,7 @@ public class RoundManager : MonoBehaviour
         FindStartWalls();
         SpawnLocalPlayer();
         if (hud != null)
-            hud.SetDisguiseCount(localTickToy != null ? DisguiseLeft : -1); // 와인더는 숨김
+            hud.SetDisguiseCount(localTickToy != null && !LateSpectator ? DisguiseLeft : -1); // 와인더·관전만 하는 사람은 숨김
         EnterHide();
     }
 
@@ -168,12 +173,36 @@ public class RoundManager : MonoBehaviour
         }
     }
 
+    /// <summary>게임 중에 들어와 이번 라운드는 관전만 함 (다음 라운드부터 참가)</summary>
+    public bool LateSpectator { get; private set; }
+
     void SpawnLocalPlayer()
     {
         MatchPrefabs prefabs = MatchPrefabs.Load();
         if (prefabs == null)
         {
             Debug.LogError("[RoundManager] Resources/MatchPrefabs 가 없어요.");
+            return;
+        }
+
+        // 경기 명단에 내가 없음 = 게임 중에 들어옴 → 안 보이는 쓰러진 틱토이로 두고 살아있는 틱토이를 관전
+        LateSpectator = FusionMatchBackend.Online != null && !MatchContext.Players.Exists(p => p.id == MatchContext.LocalId);
+        if (LateSpectator)
+        {
+            LocalCharIndex = 0;
+            localPlayer = Instantiate(prefabs.tickToyPrefabs[0], RandomRoadPoint(), Quaternion.identity);
+            localTickToy = localPlayer.GetComponent<TickToyMove>();
+            localPlayer.name = "Spectator_" + LocalNickname();
+            localPlayer.SetActive(true);
+            foreach (Renderer r in localPlayer.GetComponentsInChildren<Renderer>(true))
+                r.enabled = false;
+            foreach (Collider c in localPlayer.GetComponentsInChildren<Collider>(true))
+                c.enabled = false;
+            Rigidbody body = localPlayer.GetComponent<Rigidbody>();
+            if (body != null)
+                body.isKinematic = true;
+            localTickToy.IsDead = true;
+            TickToyMove.KeepOneAudioListener();
             return;
         }
 
@@ -485,6 +514,12 @@ public class RoundManager : MonoBehaviour
         bannerTitle.text = winder ? "당신은 와인더입니다." : "당신은 틱토이입니다.";
         bannerTitle.color = winder ? UIKit.Pink : UIKit.Mint;
         bannerSub.text = winder ? "숨어있는 틱토이를 찾아내세요!" : "와인더를 따돌려 살아남으세요!";
+        if (LateSpectator)
+        {
+            bannerTitle.text = "관전 중입니다.";
+            bannerTitle.color = UIKit.Orange;
+            bannerSub.text = "다음 라운드부터 참가해요!";
+        }
         resultRoot.SetActive(false);
     }
 
@@ -813,8 +848,35 @@ public class RoundManager : MonoBehaviour
     readonly List<NetCharacter> spectateCandidates = new List<NetCharacter>();
     SpectatorBadge spectatorBadge;
 
+    NetCharacter spectateTarget;
+
     /// <summary>내가 관전 중인 틱토이 플레이어 id (0 = 안 봄). 와인더는 관전하지 않음</summary>
     public int SpectateTargetId => spectateId;
+
+    static string NicknameOf(int id)
+    {
+        foreach (RoomPlayer p in MatchContext.Players)
+        {
+            if (p.id == id)
+                return p.nickname;
+        }
+        return "";
+    }
+
+    /// <summary>관전자에게 보낼 내 화면 정보 (능력·레벨·변장 남은 수·체력 / 태엽 바 / 능력 시계)</summary>
+    public void LocalHudState(out int packed, out float wind, out float timer)
+    {
+        wind = -1f;
+        timer = -1f;
+        if (localTickToy == null || localTickToy.IsDead || hud == null)
+        {
+            packed = 0;
+            return;
+        }
+        packed = NetCharacter.PackHud(hud.AbilityKindIndex, hud.AbilityLevel, DisguiseLeft, localTickToy.Hp);
+        wind = hud.WindShown;
+        timer = hud.TimerShown;
+    }
 
     void UpdateSpectate()
     {
@@ -843,8 +905,18 @@ public class RoundManager : MonoBehaviour
         }
 
         spectateId = target != null ? target.NetId : 0;
+        spectateTarget = target;
         if (localTickToy != null)
             localTickToy.SpectateTarget = target != null ? target.Puppet.transform : null;
+
+        // 관전 대상의 능력 칸·태엽 바·능력 시계·변장 수를 내 화면에 (대상이 보낸 값 그대로)
+        if (hud != null)
+        {
+            if (target != null)
+                hud.ShowSpectated(true, target.HudKind, target.HudLevel, target.HudWind, target.HudTimer, target.HudDisguise);
+            else
+                hud.ShowSpectated(false, 0, 0, -1f, -1f, 0);
+        }
 
         // 왼쪽 위 눈동자 표시: 살아있는 내 틱토이를 보는 사람 수 / 내가 관전 중인 사람을 보는 사람 수
         if (spectatorBadge == null)
@@ -860,6 +932,7 @@ public class RoundManager : MonoBehaviour
                     shownId = online.LocalPlayerId;
             }
             spectatorBadge.SetCount(NetCharacter.SpectatorCount(shownId));
+            spectatorBadge.SetName(target != null ? NicknameOf(target.NetId) : null); // 화면 아래 관전 대상 닉네임
         }
     }
 
@@ -897,6 +970,8 @@ public class RoundManager : MonoBehaviour
             return;
         float remain = phase == Phase.Hunt ? Mathf.Max(0f, phaseLeft) : MatchContext.HuntSeconds;
         int hp = localWinder != null ? localWinder.Hp : (localTickToy != null ? localTickToy.Hp : 100);
+        if (spectateTarget != null)
+            hp = spectateTarget.HudHp; // 관전 중: 관전 대상의 체력
         hud.SetStatus(AliveTickToys(), AliveWinders(), MatchContext.Round, remain, hp);
     }
 

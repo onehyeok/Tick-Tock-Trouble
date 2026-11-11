@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -67,6 +68,14 @@ public class LobbyUI : MonoBehaviour
     public Button leaveButton;
     public Button addBotButton;
 
+    [Header("Player Menu (방장이 플레이어 우클릭)")]
+    public GameObject playerMenu;
+    public RectTransform playerMenuCard;
+    public Text playerMenuTitle;
+    public Button makeHostButton;
+    public Button kickButton;
+    public Button playerMenuCloseButton;
+
     [Header("Overlay")]
     public GameObject loadingPanel;
     public Text toastText;
@@ -104,7 +113,7 @@ public class LobbyUI : MonoBehaviour
         Hook(createRoomButton, OpenCreate);
         Hook(backButton, () =>
         {
-            if (backend.InRoom)
+            if (backend.CurrentRoom != null)
                 backend.LeaveRoom();
             SceneManager.LoadScene(MatchService.IntroScene);
         });
@@ -124,6 +133,10 @@ public class LobbyUI : MonoBehaviour
         Hook(tickToyTeamButton, () => backend.SetTeam(RoomPlayer.TeamTickToy));
         Hook(winderTeamButton, () => backend.SetTeam(RoomPlayer.TeamWinder));
         Hook(switchTeamButton, () => backend.SetTeam(localTeam == RoomPlayer.TeamTickToy ? RoomPlayer.TeamWinder : RoomPlayer.TeamTickToy));
+        Hook(makeHostButton, () => OnPlayerMenu(true));
+        Hook(kickButton, () => OnPlayerMenu(false));
+        Hook(playerMenuCloseButton, ClosePlayerMenu);
+        SetActive(playerMenu, false);
         Hook(addBotButton, () =>
         {
             if (backend is OfflineMatchBackend offline)
@@ -321,8 +334,11 @@ public class LobbyUI : MonoBehaviour
 
     void RefreshRoom()
     {
-        bool inRoom = backend.InRoom && backend.CurrentRoom != null;
+        bool inRoom = backend.CurrentRoom != null; // 방장이 바뀌는 중에도 방 화면 유지
         SetActive(roomPanel, inRoom);
+        // 메뉴 대상이 나갔거나 내가 방장이 아니게 되면 메뉴 닫기
+        if (menuTarget != null && (!inRoom || !backend.IsHost || !HasPlayer(menuTarget.id)))
+            ClosePlayerMenu();
         if (!inRoom)
         {
             localReady = false;
@@ -340,9 +356,10 @@ public class LobbyUI : MonoBehaviour
             Destroy(playerItems[i]);
         playerItems.Clear();
 
-        bool allReady = true;
         int tickToys = 0;
         int winders = 0;
+        int readyTickToys = 0;
+        int readyWinders = 0;
         for (int i = 0; i < players.Count; i++)
         {
             RoomPlayer p = players[i];
@@ -351,6 +368,13 @@ public class LobbyUI : MonoBehaviour
                 winders++;
             else
                 tickToys++;
+            if (p.isHost || p.ready)
+            {
+                if (winder)
+                    readyWinders++;
+                else
+                    readyTickToys++;
+            }
 
             RectTransform list = winder ? winderListContent : tickToyListContent;
             if (list == null)
@@ -360,9 +384,12 @@ public class LobbyUI : MonoBehaviour
             string tag = p.isHost ? "  [방장]" : (p.ready ? "  준비 완료" : "  대기 중");
             item.text = (p.isLocal ? "★ " : "") + p.nickname + tag;
             item.color = p.isHost || p.ready ? UIKit.Brown : UIKit.Gray;
+            // 방장: 다른 사람 이름을 우클릭 → 방장 넘기기 / 강퇴하기
+            item.raycastTarget = true;
+            PlayerItemClick click = item.gameObject.AddComponent<PlayerItemClick>();
+            RoomPlayer target = p;
+            click.onRightClick = e => OpenPlayerMenu(target, e);
             playerItems.Add(item.gameObject);
-            if (!p.isHost && !p.ready)
-                allReady = false;
             if (p.isLocal)
             {
                 localReady = p.ready;
@@ -376,14 +403,70 @@ public class LobbyUI : MonoBehaviour
             winderCountText.text = $"{winders}/{MatchContext.TeamSize}";
 
         bool bothTeams = tickToys > 0 && winders > 0;
+        // 모두 준비할 필요 없이 양쪽 팀에 준비된 사람(방장 포함)이 한 명씩이면 시작 가능
+        bool canStart = readyTickToys > 0 && readyWinders > 0;
         bool host = backend.IsHost;
         startButton.gameObject.SetActive(host);
         readyButton.gameObject.SetActive(!host);
-        startButton.interactable = players.Count >= MinPlayers && bothTeams && allReady;
-        string startLabel = !bothTeams ? "양쪽 팀에 1명씩 필요" : (allReady ? "게임 시작!" : "준비 기다리는 중");
+        startButton.interactable = players.Count >= MinPlayers && canStart;
+        string startLabel = !bothTeams ? "양쪽 팀에 1명씩 필요" : (canStart ? "게임 시작!" : "준비 기다리는 중");
         UIKit.SetText(startButton, startLabel);
         UIKit.SetText(readyButton, localReady ? "준비 취소" : "준비");
         UIKit.SetColor(readyButton, localReady ? UIKit.Gray : UIKit.Mint);
+    }
+
+    // ---------------- 방장 메뉴 (우클릭) ----------------
+
+    RoomPlayer menuTarget;
+
+    bool HasPlayer(int id)
+    {
+        foreach (RoomPlayer p in backend.RoomPlayers)
+        {
+            if (p.id == id)
+                return true;
+        }
+        return false;
+    }
+
+    void OpenPlayerMenu(RoomPlayer target, PointerEventData e)
+    {
+        FusionMatchBackend online = backend as FusionMatchBackend;
+        if (online == null || !online.IsHost || target.isLocal || target.isHost || playerMenu == null)
+            return;
+        menuTarget = target;
+        playerMenuTitle.text = target.nickname;
+        makeHostButton.interactable = !FusionMatchBackend.IsBotPlayer(target.id); // 테스트 봇에겐 방장을 넘길 수 없음
+        playerMenu.SetActive(true);
+        playerMenu.transform.SetAsLastSibling();
+
+        // 누른 자리 오른쪽 아래에 메뉴 (화면 밖으로 나가지 않게)
+        RectTransform area = (RectTransform)playerMenu.transform;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(area, e.position, e.pressEventCamera, out Vector2 local);
+        Vector2 size = playerMenuCard.sizeDelta;
+        Rect r = area.rect;
+        local.x = Mathf.Clamp(local.x, r.xMin, r.xMax - size.x);
+        local.y = Mathf.Clamp(local.y, r.yMin + size.y, r.yMax);
+        playerMenuCard.anchoredPosition = local;
+    }
+
+    void OnPlayerMenu(bool makeHost)
+    {
+        FusionMatchBackend online = backend as FusionMatchBackend;
+        RoomPlayer target = menuTarget;
+        ClosePlayerMenu();
+        if (online == null || target == null)
+            return;
+        if (makeHost)
+            online.TransferHost(target.id);
+        else
+            online.KickPlayer(target.id);
+    }
+
+    void ClosePlayerMenu()
+    {
+        menuTarget = null;
+        SetActive(playerMenu, false);
     }
 
     void ToggleReady()

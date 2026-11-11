@@ -19,18 +19,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     {
         if (!IsHost)
             return;
-        if (TeamCount(RoomPlayer.TeamTickToy) < 1 || TeamCount(RoomPlayer.TeamWinder) < 1)
+        // 모두 준비할 필요 없이, 양쪽 팀에 준비된 사람(방장 포함)이 한 명씩만 있으면 시작 (1 vs 1 부터)
+        if (ReadyCount(RoomPlayer.TeamTickToy) < 1 || ReadyCount(RoomPlayer.TeamWinder) < 1)
         {
-            Error?.Invoke("틱토이와 와인더가 한 명씩은 있어야 해요.");
+            Error?.Invoke("틱토이와 와인더에 준비된 사람이 한 명씩은 있어야 해요.");
             return;
-        }
-        foreach (RoomPlayer p in players)
-        {
-            if (!p.isHost && !p.ready)
-            {
-                Error?.Invoke("모두 준비해야 시작할 수 있어요.");
-                return;
-            }
         }
 
         MapEntry map = MapCatalog.Load()?.Get(current.mapIndex);
@@ -51,6 +44,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     {
         if (!IsHost)
             return;
+        RefreshMatchRoster();
         SendToClients(Msg(H2C_LoadMap, w =>
         {
             w.Write(MatchContext.Round);
@@ -74,6 +68,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     void DoReturnToRoom()
     {
+        matchSawNet = false;
+        lostNetSeconds = 0f;
         MatchContext.End();
         ClearGameState();
         HostDespawnAll(true);
@@ -82,13 +78,15 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     /// <summary>씬을 불러오는 중 (다음 라운드 맵 로딩 중복 방지)</summary>
     bool sceneLoading;
+    float sceneLoadingSince;
 
     void LoadMatchScene(string sceneName)
     {
         sceneLoading = true;
+        sceneLoadingSince = Time.realtimeSinceStartup;
         ClearGameState();
         HostDespawnAll(false); // 맵 AI 는 새 맵에서 다시 만듦 (플레이어 캐릭터는 유지)
-        GameLoading?.Invoke();
+        try { GameLoading?.Invoke(); } catch (Exception e) { Debug.LogException(e); }
         SceneManager.LoadSceneAsync(sceneName);
     }
 
@@ -97,7 +95,6 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         aiIds.Clear();
         aiById.Clear();
         nextAiId = AiIdBase;
-        lastSentPhase = -1;
         netAliveTickToys = -1;
         netAliveWinders = -1;
     }
@@ -109,27 +106,62 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         sceneLoading = false;
         aiIds.Clear();
         aiById.Clear();
-        lastSentPhase = -1;
     }
 
     // ---------------- 게임 중 동기화 ----------------
 
-    /// <summary>(참가자) 1초마다: 방장 캐릭터에 기록된 라운드가 내 라운드보다 앞서 있으면 따라감.
-    /// 메시지(신뢰성 데이터)가 늦거나 빠져도 네트워크 오브젝트 값은 계속 갱신되므로 결과 화면에 멈추지 않음</summary>
-    void ClientCheckRoundFromNetwork()
+    /// <summary>(참가자) 매 프레임: 방장이 네트워크 캐릭터에 기록한 라운드·단계를 그대로 따라감.
+    /// 메시지는 늦거나 빠질 수 있지만 네트워크 값은 계속 갱신되므로, 인원이 많아도 모두 같은 라운드·단계에 있게 됨</summary>
+    void ClientFollowNetwork()
     {
-        roundCheckTimer += Time.unscaledDeltaTime;
-        if (roundCheckTimer < 1f)
-            return;
-        roundCheckTimer = 0f;
+        // 맵 로딩이 끝나지 않고 멈춰 있으면(20초) 풀어서 다시 따라가게
+        if (sceneLoading && Time.realtimeSinceStartup - sceneLoadingSince > 20f)
+        {
+            Debug.LogWarning("[Fusion] 맵 로딩이 너무 오래 걸려서 다시 시도해요.");
+            sceneLoading = false;
+        }
+
+        NetCharacter src = null;
         foreach (NetCharacter nc in NetCharacter.Players.Values)
         {
-            if (nc == null || nc.Object == null || !nc.Object.IsValid || nc.MatchRound <= MatchContext.Round)
+            if (nc == null || nc.Object == null || !nc.Object.IsValid || nc.MatchRound <= 0)
                 continue;
-            ClientCatchUpRound(nc.MatchRound, nc.MatchTickToyWins, nc.MatchWinderWins);
+            if (src == null || nc.MatchRound > src.MatchRound)
+                src = nc;
+        }
+
+        // 방장이 방으로 돌아가며 캐릭터를 모두 지웠는데 '방으로' 메시지를 놓친 경우 → 3초 뒤 따라서 방으로
+        if (src == null)
+        {
+            if (matchSawNet && !sceneLoading)
+            {
+                lostNetSeconds += Time.unscaledDeltaTime;
+                if (lostNetSeconds > 3f)
+                {
+                    Debug.LogWarning("[Fusion] 방으로 돌아가기 메시지를 놓쳐서 직접 돌아가요.");
+                    DoReturnToRoom();
+                }
+            }
             return;
         }
+        matchSawNet = true;
+        lostNetSeconds = 0f;
+
+        if (src.MatchRound > MatchContext.Round)
+        {
+            ClientCatchUpRound(src.MatchRound, src.MatchTickToyWins, src.MatchWinderWins);
+            return;
+        }
+        if (src.MatchRound < MatchContext.Round || sceneLoading)
+            return; // 방장이 아직 다음 맵을 불러오는 중
+
+        netAliveTickToys = src.MatchAliveTickToys;
+        netAliveWinders = src.MatchAliveWinders;
+        RoundManager.Instance?.ApplyNetPhase(src.MatchPhase, src.MatchPhaseLeft, src.MatchWinderWon, src.MatchTickToyWins, src.MatchWinderWins);
     }
+
+    bool matchSawNet;
+    float lostNetSeconds;
 
     /// <summary>(참가자) 방장은 다음 라운드인데 나는 아직 이전 라운드 → 다음 라운드 맵을 직접 불러옴.
     /// 맵 로딩 메시지를 놓쳐 결과 화면에 멈춰 있는 일을 막음</summary>
@@ -144,7 +176,16 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         MatchContext.Round = hostRound;
         MatchContext.TickToyWins = tickToyWins;
         MatchContext.WinderWins = winderWins;
+        RefreshMatchRoster();
         LoadMatchScene(map.sceneName);
+    }
+
+    /// <summary>새 라운드 시작 때 경기 명단 = 지금 방에 있는 사람 (게임 중에 들어온 사람은 이때부터 참가, 나간 사람은 빠짐)</summary>
+    void RefreshMatchRoster()
+    {
+        MatchContext.Players.Clear();
+        MatchContext.Players.AddRange(players);
+        MatchContext.AssignRolesFromTeams();
     }
 
     int netAliveTickToys = -1;
@@ -185,7 +226,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             }
             if (!connected.Contains(p.id))
                 continue;
-            if (NetCharacter.Players.TryGetValue(p.id, out NetCharacter nc) && nc != null && nc.HasPose && !nc.Alive)
+            // 이번 라운드에 보낸 상태로만 판단 (이전 라운드에 쓰러진 값이 남아 있어도 살아있는 것으로)
+            if (NetCharacter.Players.TryGetValue(p.id, out NetCharacter nc) && nc != null && nc.HasPose
+                && nc.PoseRound == MatchContext.Round && !nc.Alive)
                 continue;
             n++;
         }
@@ -257,52 +300,29 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         }
     }
 
-    float roundCheckTimer;
-
     void Update()
     {
         if (!InRoom || runner == null || !MatchContext.Active)
             return;
         if (!IsHost)
         {
-            ClientCheckRoundFromNetwork();
+            ClientFollowNetwork();
             return;
         }
         RoundManager rm = RoundManager.Instance;
         if (rm == null || rm.LocalPlayerObject == null)
             return;
 
-        float dt = Time.unscaledDeltaTime;
-        aiRefreshTimer += dt;
-        phaseTimer += dt;
+        aiRefreshTimer += Time.unscaledDeltaTime;
 
-        // 방장: 플레이어 캐릭터(매치 동안 유지)와 맵 AI 를 네트워크 오브젝트로
+        // 방장: 플레이어 캐릭터(매치 동안 유지)와 맵 AI 를 네트워크 오브젝트로.
+        // 라운드·단계·생존 수는 각 플레이어 캐릭터(NetCharacter)에 매 틱 기록됨
         if (!playersSpawned)
             HostSpawnPlayers();
         if (aiRefreshTimer >= 1f)
         {
             aiRefreshTimer = 0f;
             RefreshAIs();
-        }
-
-        int phase = rm.PhaseIndex;
-        if (phase != lastSentPhase || phaseTimer >= 1f)
-        {
-            lastSentPhase = phase;
-            phaseTimer = 0f;
-            int aliveT = AliveCount(false, 0);
-            int aliveW = AliveCount(true, 0);
-            SendToClients(Msg(H2C_Phase, w =>
-            {
-                w.Write((byte)phase);
-                w.Write(rm.PhaseLeft);
-                w.Write(rm.ResultWinderWon);
-                w.Write(MatchContext.TickToyWins);
-                w.Write(MatchContext.WinderWins);
-                w.Write((byte)aliveT);
-                w.Write((byte)aliveW);
-                w.Write(MatchContext.Round);
-            }));
         }
     }
 
@@ -383,10 +403,19 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         RoundManager rm = RoundManager.Instance;
         if (rm == null || rm.LocalPlayerObject == null)
             return;
+        if (rm.LateSpectator)
+        {
+            // 게임 중에 들어와 관전만 하는 중: 몸은 보내지 않고(다른 화면에 안 보임) 관전 대상만
+            input.Set(new NetPoseInput { Spectate = rm.SpectateTargetId, Round = MatchContext.Round });
+            return;
+        }
         NetPose pose = NetPose.Capture(rm.LocalPlayerObject, LocalPlayerId,
             rm.LocalIsWinderRole ? NetPose.KindWinder : NetPose.KindTickToy, (byte)rm.LocalCharIndex, rm.LocalAlive, rm.LocalFlags);
         NetPoseInput inp = NetPoseInput.From(pose);
         inp.Spectate = rm.SpectateTargetId;
+        inp.Round = MatchContext.Round;
+        rm.LocalHudState(out inp.Hud, out inp.HudWind, out inp.HudTimer);
+        inp.Spring = rm.LocalSpringDegrees;
         input.Set(inp);
     }
 
@@ -417,6 +446,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     public const byte EvDuplicateCloud = 4;
     public const byte EvSound = 5;
     public const byte EvMark = 6;
+    public const byte EvCommand = 7;
+    public const byte EvHeal = 8;
 
     /// <summary>내가 한 일을 모두에게 알림 (나는 이미 내 화면에서 했으므로 다시 하지 않음)</summary>
     void SendGameEvent(byte kind, Action<BinaryWriter> body)
@@ -446,6 +477,21 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     /// <summary>와인더 Z: 의심되는 틱토이(사람·AI) 표시 → 모두의 화면에 빨간 테두리</summary>
     public void SendMark(int targetId) =>
         SendGameEvent(EvMark, w => w.Write(targetId));
+
+    /// <summary>와인더 회복하기: 다른 화면의 내 브릭 주변에도 초록 이펙트</summary>
+    public void SendHeal() => SendGameEvent(EvHeal, w => { });
+
+    /// <summary>와인더 명령하기: 원 중심·이모트·레벨·걸린 대상 id (AI·틱토이 플레이어)</summary>
+    public void SendCommand(Vector3 center, int emote, int level, List<int> ids) =>
+        SendGameEvent(EvCommand, w =>
+        {
+            w.Write(center.x); w.Write(center.y); w.Write(center.z);
+            w.Write((byte)emote);
+            w.Write((byte)level);
+            w.Write((short)ids.Count);
+            foreach (int id in ids)
+                w.Write(id);
+        });
 
     /// <summary>id 의 캐릭터가 내 화면에서 어떤 오브젝트인지 (나 / 방장의 진짜 AI / 다른 사람 복사본)</summary>
     public GameObject CharacterObject(int netId)
@@ -502,6 +548,31 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             case EvMark:
                 SuspectMarks.Add(rd.ReadInt32(), null);
                 break;
+            case EvHeal:
+            {
+                GameObject winder = CharacterObject(origin);
+                if (winder != null)
+                    HealEffect.Spawn(winder.transform);
+                break;
+            }
+            case EvCommand:
+            {
+                Vector3 center = new Vector3(rd.ReadSingle(), rd.ReadSingle(), rd.ReadSingle());
+                int emote = rd.ReadByte();
+                int level = rd.ReadByte();
+                int n = rd.ReadInt16();
+                List<int> ids = new List<int>(n);
+                for (int i = 0; i < n; i++)
+                {
+                    int id = rd.ReadInt32();
+                    ids.Add(id);
+                    // AI 는 방장 화면에서만 진짜로 움직임 → 방장이 명령 (다른 화면엔 AI 동작이 그대로 보임)
+                    if (IsHost && id >= AiIdBase && aiById.TryGetValue(id, out TickToyAI ai) && ai != null && !ai.IsDead)
+                        ai.Command(WinderCommand.Delay, emote);
+                }
+                WinderCommand.ApplyRemote(center, emote, level, ids);
+                break;
+            }
             case EvSound:
             {
                 SoundId id = (SoundId)rd.ReadByte();

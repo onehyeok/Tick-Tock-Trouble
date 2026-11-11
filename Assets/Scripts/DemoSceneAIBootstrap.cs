@@ -19,14 +19,6 @@ public class DemoSceneAIBootstrap : MonoBehaviour
     [SerializeField] private float clearHeadroom = 3.2f;
     [SerializeField] private float bodyRadius = 0.28f;
 
-    static readonly string[] PrefabPaths =
-    {
-        "Assets/Prefabs/Jephy.prefab",
-        "Assets/Prefabs/Lulu.prefab",
-        "Assets/Prefabs/Momo.prefab",
-        "Assets/Prefabs/Volt.prefab"
-    };
-
     void Start()
     {
         StartCoroutine(SetupRoutine());
@@ -357,30 +349,6 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             {
                 if (tickToyPrefabs[i] != null)
                     list.Add(tickToyPrefabs[i]);
-            }
-        }
-
-        if (list.Count > 0)
-            return list.ToArray();
-
-#if UNITY_EDITOR
-        for (int i = 0; i < PrefabPaths.Length; i++)
-        {
-            GameObject prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPaths[i]);
-            if (prefab != null)
-                list.Add(prefab);
-        }
-#endif
-
-        // 플레이 중에도 Resources 백업 (없으면 무시)
-        if (list.Count == 0)
-        {
-            string[] names = { "Jephy", "Lulu", "Momo", "Volt" };
-            for (int i = 0; i < names.Length; i++)
-            {
-                GameObject p = Resources.Load<GameObject>(names[i]);
-                if (p != null)
-                    list.Add(p);
             }
         }
 

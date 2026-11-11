@@ -14,6 +14,11 @@ public struct NetPoseInput : INetworkInput
     public float P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11;
     public byte ParamCount;
     public int Spectate; // 죽은 틱토이가 관전 중인 틱토이 플레이어 id (0 = 안 봄)
+    public int Round;    // 이 상태를 보낸 라운드 (이전 라운드에 죽은 상태가 새 라운드에 남지 않게)
+    public int Hud;      // 관전자에게 보여줄 내 화면 정보 (NetCharacter.PackHud)
+    public float HudWind;  // 태엽 바 진행 (0~1, 안 감으면 -1)
+    public float HudTimer; // 능력 시계 남은 비율 (0~1, 없으면 -1)
+    public float Spring;   // 와인더 등 태엽 각도 (0~360)
 
     public bool Valid => (Info & (1 << 17)) != 0;
 
@@ -73,10 +78,24 @@ public class NetCharacter : NetworkBehaviour
     [Networked] public byte ParamCount { get; set; }
     /// <summary>이 플레이어가 관전 중인 틱토이 플레이어 id (0 = 안 봄) → 관전자 수 표시에 사용</summary>
     [Networked] public int Spectating { get; set; }
-    /// <summary>방장이 기록하는 지금 라운드·승수. 참가자가 "다음 라운드" 메시지를 놓쳐도 이 값으로 따라감</summary>
+    /// <summary>방장이 기록하는 지금 라운드·단계·승수·생존 수. 참가자는 메시지 대신 이 값을 계속 따라감
+    /// (메시지가 늦거나 빠져도 결과 화면에 멈추지 않음). 라운드와 단계는 항상 함께 바뀜</summary>
     [Networked] public int MatchRound { get; set; }
+    [Networked] public byte MatchPhase { get; set; }
+    [Networked] public float MatchPhaseLeft { get; set; }
+    [Networked] public NetworkBool MatchWinderWon { get; set; }
     [Networked] public int MatchTickToyWins { get; set; }
     [Networked] public int MatchWinderWins { get; set; }
+    [Networked] public byte MatchAliveTickToys { get; set; }
+    [Networked] public byte MatchAliveWinders { get; set; }
+    /// <summary>이 플레이어가 상태를 보낸 라운드 (방장이 생존 수를 셀 때 이전 라운드 값 무시)</summary>
+    [Networked] public int PoseRound { get; set; }
+    /// <summary>관전자 화면용: 능력·레벨·변장 남은 수·체력 (PackHud) / 태엽 바 / 능력 시계</summary>
+    [Networked] public int Hud { get; set; }
+    [Networked] public float HudWind { get; set; }
+    [Networked] public float HudTimer { get; set; }
+    /// <summary>와인더 등 태엽 각도 → 모두의 화면에서 같은 각도로 돌아감</summary>
+    [Networked] public float SpringDeg { get; set; }
     [Networked, Capacity(6)] public NetworkArray<int> Hashes => default;
     [Networked, Capacity(6)] public NetworkArray<float> Weights => default;
     [Networked, Capacity(12)] public NetworkArray<float> Params => default;
@@ -120,10 +139,6 @@ public class NetCharacter : NetworkBehaviour
         if (!HasStateAuthority)
             return;
 
-        MatchRound = MatchContext.Active ? MatchContext.Round : 0;
-        MatchTickToyWins = MatchContext.TickToyWins;
-        MatchWinderWins = MatchContext.WinderWins;
-
         // 방장: 맵 AI
         if (NetId >= AiIdBase)
         {
@@ -137,7 +152,24 @@ public class NetCharacter : NetworkBehaviour
             return;
         }
 
-        // 방장: 사람 플레이어 (본인이 보낸 입력)
+        // 방장: 지금 라운드 상태 (사람 캐릭터에만). 라운드 번호는 지금 맵의 번호로 → 다음 맵을 불러오는 동안
+        // '새 라운드 번호 + 이전 라운드 결과 화면' 이 섞여 보내지지 않음
+        RoundManager rm = RoundManager.Instance;
+        if (MatchContext.Active && rm != null && FusionMatchBackend.Instance != null)
+        {
+            MatchRound = rm.RoundNumber;
+            MatchPhase = (byte)rm.PhaseIndex;
+            MatchPhaseLeft = rm.PhaseLeft;
+            MatchWinderWon = rm.ResultWinderWon;
+            MatchTickToyWins = MatchContext.TickToyWins;
+            MatchWinderWins = MatchContext.WinderWins;
+            MatchAliveTickToys = (byte)FusionMatchBackend.Instance.AliveCount(false, 0);
+            MatchAliveWinders = (byte)FusionMatchBackend.Instance.AliveCount(true, 0);
+        }
+
+        // 방장: 사람 플레이어 (본인이 보낸 입력). 관전만 하는 사람(게임 중에 들어옴)은 관전 대상만 옴
+        if (GetInput(out NetPoseInput spec) && !spec.Valid)
+            Spectating = spec.Spectate;
         if (GetInput(out NetPoseInput inp) && inp.Valid)
         {
             Pos = inp.Pos;
@@ -161,9 +193,22 @@ public class NetCharacter : NetworkBehaviour
             for (int k = 0; k < NetPose.MaxParams; k++)
                 Params.Set(k, inp.Param(k));
             Spectating = inp.Spectate;
+            PoseRound = inp.Round;
+            Hud = inp.Hud;
+            HudWind = inp.HudWind;
+            HudTimer = inp.HudTimer;
+            SpringDeg = inp.Spring;
             HasPose = true;
         }
     }
+
+    // ---- 관전자 화면 정보 묶기: 능력 종류 3비트 | 레벨 2비트 | 변장 남은 수 4비트 | 체력 8비트 ----
+    public static int PackHud(int kind, int level, int disguiseLeft, int hp) =>
+        (kind & 7) | ((level & 3) << 3) | ((Mathf.Clamp(disguiseLeft, 0, 15) & 15) << 5) | ((Mathf.Clamp(hp, 0, 255) & 255) << 9);
+    public int HudKind => Hud & 7;
+    public int HudLevel => (Hud >> 3) & 3;
+    public int HudDisguise => (Hud >> 5) & 15;
+    public int HudHp => (Hud >> 9) & 255;
 
     /// <summary>id 플레이어를 관전 중인 사람 수</summary>
     public static int SpectatorCount(int id)
@@ -215,6 +260,7 @@ public class NetCharacter : NetworkBehaviour
         pose.flags = Flags;
         pose.pos = Pos;
         pose.yaw = Yaw;
+        pose.spring = SpringDeg;
         for (int l = 0; l < NetPose.MaxLayers; l++)
         {
             pose.hashes[l] = Hashes[l];

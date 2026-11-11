@@ -95,12 +95,12 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public void JoinRoom(string roomName, string password)
     {
-        RoomInfo info = rooms.Find(x => x.name == roomName);
-        if (info != null && info.inGame)
+        if (kickedRooms.Contains(roomName))
         {
-            Error?.Invoke("게임 중인 방이에요.");
+            Error?.Invoke(KickedJoinMessage);
             return;
         }
+        RoomInfo info = rooms.Find(x => x.name == roomName);
         if (info != null && !info.IsJoinable)
         {
             Error?.Invoke("방이 꽉 찼어요.");
@@ -111,7 +111,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public void JoinRandom()
     {
-        List<RoomInfo> open = rooms.FindAll(x => x.IsJoinable && !x.locked);
+        List<RoomInfo> open = rooms.FindAll(x => x.IsJoinable && !x.locked && !kickedRooms.Contains(x.name));
         if (open.Count == 0)
         {
             Error?.Invoke("참가할 수 있는 방이 없어요.");
@@ -132,7 +132,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             joinStuck = true;
     }
 
-    async Task<bool> JoinAsync(string roomName, string password, bool silent)
+    async Task<bool> JoinAsync(string roomName, string password, bool silent, int attempts = JoinAttempts)
     {
         if (busy || InRoom || quitting)
             return false;
@@ -142,12 +142,13 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         // → 멈추면 그 연결을 끊고 새 연결로 다시 시도 (최대 3번). 암호 틀림·방 꽉 참·방 없음은 다시 해도 같으니 바로 실패.
         StartGameResult result = null;
         bool joined = false;
-        for (int attempt = 1; attempt <= JoinAttempts; attempt++)
+        for (int attempt = 1; attempt <= attempts; attempt++)
         {
             NetworkRunner r = await FreshRunner();
             if (quitting)
                 return false;
             joinStuck = false;
+            joinKicked = false;
             Application.logMessageReceived += WatchJoinError;
             Task<StartGameResult> start = r.StartGame(new StartGameArgs
             {
@@ -167,7 +168,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             bool killed = false;
             if (!start.IsCompleted || joinStuck)
             {
-                Debug.LogWarning("[Fusion] 방 연결이 멈춰서 다시 시도해요 (" + attempt + "/" + JoinAttempts + ")");
+                Debug.LogWarning("[Fusion] 방 연결이 멈춰서 다시 시도해요 (" + attempt + "/" + attempts + ")");
                 killed = true;
                 await r.Shutdown(); // 멈춘 연결을 끊음
             }
@@ -183,13 +184,22 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 current = new RoomSettings { roomName = roomName };
                 SendToHost(Msg(C2H_Hello, w => w.Write(nickname)));
                 float wait = Time.realtimeSinceStartup + RoomInfoTimeoutSeconds;
-                while (players.Count == 0 && !r.IsShutdown && Time.realtimeSinceStartup < wait && !quitting)
+                while (players.Count == 0 && !joinKicked && !r.IsShutdown && Time.realtimeSinceStartup < wait && !quitting)
                     await Task.Yield();
                 if (quitting)
                     return false;
-                if (players.Count > 0)
+                if (players.Count > 0 && !joinKicked)
                     break;
-                Debug.LogWarning("[Fusion] 방에 들어갔지만 방장 응답이 없어서 다시 시도해요 (" + attempt + "/" + JoinAttempts + ")");
+                if (joinKicked)
+                {
+                    // 강퇴당한 방 → 다시 시도하지 않음
+                    joined = false;
+                    if (!r.IsShutdown)
+                        await r.Shutdown();
+                    runner = null;
+                    break;
+                }
+                Debug.LogWarning("[Fusion] 방에 들어갔지만 방장 응답이 없어서 다시 시도해요 (" + attempt + "/" + attempts + ")");
                 joined = false;
                 killed = true;
                 if (!r.IsShutdown)
@@ -201,7 +211,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 || (result.ShutdownReason != ShutdownReason.ConnectionRefused
                     && result.ShutdownReason != ShutdownReason.GameIsFull
                     && result.ShutdownReason != ShutdownReason.GameNotFound);
-            if (!retry || attempt == JoinAttempts)
+            if (!retry || attempt == attempts)
                 break;
             await Task.Delay(1000);
         }
@@ -210,10 +220,14 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         if (!joined)
         {
             runner = null;
+            if (joinKicked)
+                kickedRooms.Add(roomName);
             if (silent)
                 return false;
             string msg;
-            switch (result.ShutdownReason)
+            if (joinKicked)
+                msg = KickedJoinMessage;
+            else switch (result.ShutdownReason)
             {
                 case ShutdownReason.ConnectionRefused: msg = "들어갈 수 없어요. 암호가 틀렸거나 게임 중인 방이에요."; break;
                 case ShutdownReason.GameIsFull: msg = "방이 꽉 찼어요."; break;
@@ -236,6 +250,16 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public async void LeaveRoom()
     {
+        if (handingOver)
+        {
+            // 방장 넘기는 중에 나가기 → 넘기기를 멈추고 방 목록으로
+            handoverCancelled = true;
+            handingOver = false;
+            players.Clear();
+            current = null;
+            RoomChanged?.Invoke();
+            return;
+        }
         if (!InRoom || runner == null)
             return;
         leaving = true;
@@ -258,17 +282,21 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         if (!InRoom)
             return;
 
-        // 방장이 나갔거나 연결이 끊김 → 방을 없애지 않고, 먼저 들어온 사람이 새 방장이 되어 같은 방을 다시 엶
+        // 방장이 나갔거나 연결이 끊김 → 방을 없애지 않고, 먼저 들어온 사람이 바로 새 방장이 되어 같은 방을 이어감
         int myOldId = LocalPlayerId;
         RoomSettings oldRoom = current;
         List<RoomPlayer> oldPlayers = new List<RoomPlayer>(players);
         bool inMatch = MatchContext.Active;
 
         InRoom = false;
-        players.Clear();
-        current = null;
         runner = null;
         ClearGameState();
+
+        // 넘기는 동안에도 방 화면은 그대로 (나간 방장·봇만 빼고 보여 줌)
+        handingOver = oldRoom != null;
+        handoverCancelled = false;
+        current = oldRoom;
+        players.RemoveAll(p => p.isHost || IsBotId(p.id));
         RoomChanged?.Invoke();
         StartCoroutine(Handover(oldRoom, oldPlayers, myOldId, inMatch));
     }
@@ -277,25 +305,47 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     /// <summary>새 방에 다시 모였을 때 원래 팀을 그대로 (닉네임 → 팀)</summary>
     readonly Dictionary<string, int> pendingTeams = new Dictionary<string, int>();
+    /// <summary>방장이 나가서 새 방장에게 옮겨 가는 중 (방 화면은 계속 보여 줌)</summary>
+    bool handingOver;
+    bool handoverCancelled;
+    const float HandoverGiveUpSeconds = 40f;
+    const float HandoverTurnSeconds = 6f; // 앞 순서 사람이 방을 못 열면 이만큼 뒤에 다음 사람이 엶
 
     IEnumerator Handover(RoomSettings room, List<RoomPlayer> oldPlayers, int myOldId, bool inMatch)
     {
-        // 남은 사람 중 가장 먼저 들어온 사람(목록 순서 = 들어온 순서, 봇 제외)
-        RoomPlayer successor = oldPlayers.Find(p => !p.isHost && !IsBotId(p.id));
-        int remaining = oldPlayers.FindAll(p => !p.isHost && !IsBotId(p.id)).Count;
-        bool iAmNext = successor != null && successor.id == myOldId;
+        // 남은 사람(들어온 순서 = 목록 순서, 방장·봇 제외). 맨 앞 사람이 새 방장.
+        // 그 사람이 못 열면(튕김 등) 다음 사람이 순서대로 대신 엶 → 누가 나가도 방이 사라지지 않음
+        List<RoomPlayer> order = oldPlayers.FindAll(p => !p.isHost && !IsBotId(p.id));
+        // 방장 넘기기: 고른 사람이 맨 앞(새 방장), 원래 방장은 맨 뒤에 일반 참가자로 다시 들어옴
+        int chosen = order.FindIndex(p => p.id == transferToId);
+        if (chosen > 0)
+        {
+            RoomPlayer first = order[chosen];
+            order.RemoveAt(chosen);
+            order.Insert(0, first);
+        }
+        if (transferToId != 0)
+        {
+            RoomPlayer oldHost = oldPlayers.Find(p => p.isHost);
+            if (oldHost != null)
+                order.Add(new RoomPlayer { id = oldHost.id, nickname = oldHost.nickname, team = oldHost.team });
+        }
+        transferToId = 0;
+        int myRank = order.FindIndex(p => p.id == myOldId);
+        if (myRank < 0)
+            myRank = order.Count; // (방장이던 내 연결이 끊긴 경우) 맨 뒤 순서
 
         pendingTeams.Clear();
-        foreach (RoomPlayer p in oldPlayers)
+        foreach (RoomPlayer p in order)
         {
-            if (!p.isHost && !IsBotId(p.id) && !string.IsNullOrEmpty(p.nickname))
+            if (!string.IsNullOrEmpty(p.nickname))
                 pendingTeams[p.nickname] = p.team;
         }
 
         // 게임 중이었으면 안내 띠를 보여 주고 방으로
         if (inMatch && RoundManager.Instance != null)
         {
-            RoundManager.Instance.ShowMatchAbort(remaining <= 1 ? "상대가 없어 게임을 종료합니다." : "방장이 나가 게임을 종료합니다.");
+            RoundManager.Instance.ShowMatchAbort(order.Count <= 1 ? "상대가 없어 게임을 종료합니다." : "방장이 나가 게임을 종료합니다.");
             yield return new WaitForSecondsRealtime(3f);
         }
         MatchContext.Active = false;
@@ -306,48 +356,170 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         yield return null;
 
         bool ok = false;
-        if (room != null && (iAmNext || successor != null))
+        bool iAmHost = false;
+        float start = Time.realtimeSinceStartup;
+        List<RoomPlayer> view = new List<RoomPlayer>(players); // 넘기는 동안 보여 줄 방 화면
+        if (myRank > 0)
+            yield return new WaitForSecondsRealtime(1.5f); // 새 방장이 방을 열 시간
+        while (room != null && !ok && !quitting && !handoverCancelled && Time.realtimeSinceStartup - start < HandoverGiveUpSeconds)
         {
-            if (iAmNext)
+            // 내 차례가 되면 방을 직접 엶 (이미 누가 열었으면 실패 → 들어가기)
+            if (Time.realtimeSinceStartup - start >= myRank * HandoverTurnSeconds)
             {
-                // 내가 새 방장: 같은 이름·설정으로 방을 다시 엶 (이전 방이 닫힐 때까지 몇 번 재시도)
-                for (int tries = 0; tries < 6 && !ok && !quitting; tries++)
-                {
-                    Task<bool> t = CreateRoomAsync(room, true);
-                    while (!t.IsCompleted)
-                        yield return null;
-                    ok = t.Result;
-                    if (!ok)
-                        yield return new WaitForSecondsRealtime(1.2f);
-                }
-                if (ok)
-                    StartCoroutine(ErrorLater("방장이 되셨습니다!"));
+                Task<bool> c = CreateRoomAsync(room, true);
+                while (!c.IsCompleted)
+                    yield return null;
+                ok = iAmHost = c.Result;
             }
-            else
+            if (!ok && !handoverCancelled)
             {
-                // 새 방장이 방을 열 때까지 기다렸다가 다시 들어감
-                yield return new WaitForSecondsRealtime(2.5f);
-                for (int tries = 0; tries < 8 && !ok && !quitting; tries++)
+                Task<bool> j = JoinAsync(room.roomName, room.password, true, 1);
+                while (!j.IsCompleted)
+                    yield return null;
+                ok = j.Result;
+            }
+            if (!ok)
+            {
+                // 실패한 시도가 방 화면을 지우지 않게 되돌림
+                if (!handoverCancelled)
                 {
-                    Task<bool> t = JoinAsync(room.roomName, room.password, true);
-                    while (!t.IsCompleted)
-                        yield return null;
-                    ok = t.Result;
-                    if (!ok)
-                        yield return new WaitForSecondsRealtime(1.5f);
+                    current = room;
+                    players.Clear();
+                    players.AddRange(view);
                 }
-                if (ok)
-                    StartCoroutine(ErrorLater((successor.nickname ?? "") + " 님이 새 방장이 되었어요."));
+                yield return new WaitForSecondsRealtime(1f);
             }
         }
+        handingOver = false;
 
-        if (!ok && !quitting)
+        if (ok && handoverCancelled)
         {
+            LeaveRoom(); // 넘기는 중에 나가기를 누름
+            yield break;
+        }
+        if (handoverCancelled || quitting)
+            yield break;
+
+        if (ok)
+        {
+            RoomPlayer host = players.Find(p => p.isHost);
+            StartCoroutine(ErrorLater(iAmHost ? "방장이 되셨습니다!" : (host != null ? host.nickname : "") + " 님이 새 방장이 되었어요."));
+        }
+        else
+        {
+            players.Clear();
+            current = null;
             MatchContext.ReturnToRoom = false;
             RoomChanged?.Invoke();
-            StartCoroutine(ErrorLater("방장이 나가서 방이 닫혔어요."));
+            StartCoroutine(ErrorLater("인터넷 연결이 불안정해서 방에 다시 들어가지 못했어요."));
             RejoinLobby();
         }
+    }
+
+    // ---------------- 방장 넘기기 / 강퇴 (방 화면에서 방장이 우클릭) ----------------
+
+    /// <summary>방장이 넘겨주기로 한 사람 id (방장이 나가면 이 사람이 새 방장). 0 = 없음</summary>
+    int transferToId;
+
+    /// <summary>방장: 고른 사람에게 방장을 넘김. 방장 연결을 넘길 수는 없으므로, 모두에게 새 방장을 알린 뒤
+    /// 방을 닫고 → 그 사람이 같은 방을 다시 열고 → 나머지(원래 방장 포함)가 바로 다시 들어감</summary>
+    public void TransferHost(int playerId)
+    {
+        if (!IsHost || handingOver || MatchContext.Active)
+            return;
+        RoomPlayer target = players.Find(p => p.id == playerId);
+        if (target == null || target.isHost || IsBotId(playerId))
+            return;
+        transferToId = playerId;
+        SendToClients(Msg(H2C_HostTransfer, w => w.Write(playerId)));
+        StartCoroutine(TransferThenRejoin());
+    }
+
+    IEnumerator TransferThenRejoin()
+    {
+        yield return new WaitForSecondsRealtime(0.5f); // 알림이 모두에게 도착할 시간
+        if (!InRoom || runner == null)
+            yield break;
+
+        int myOldId = LocalPlayerId;
+        RoomSettings room = current;
+        List<RoomPlayer> oldPlayers = new List<RoomPlayer>(players);
+        oldPlayers.RemoveAll(p => IsBotId(p.id)); // 봇은 방이 다시 열리면 사라짐
+
+        // 방 화면은 그대로 둔 채 내 방(연결)을 닫음
+        handingOver = true;
+        handoverCancelled = false;
+        leaving = true;
+        NetworkRunner r = runner;
+        InRoom = false;
+        runner = null;
+        players.RemoveAll(p => p.isHost || IsBotId(p.id));
+        RoomChanged?.Invoke();
+        Task t = r.Shutdown();
+        while (!t.IsCompleted)
+            yield return null;
+        leaving = false;
+        StartCoroutine(Handover(room, oldPlayers, myOldId, false));
+    }
+
+    const string KickedJoinMessage = "강퇴 당한 방이라서 들어갈 수 없어요.";
+    /// <summary>내가 강퇴당한 방 이름 (게임을 끌 때까지 다시 못 들어감)</summary>
+    readonly HashSet<string> kickedRooms = new HashSet<string>();
+    /// <summary>방장: 강퇴한 사람 닉네임 (다시 들어오려 하면 바로 내보냄)</summary>
+    readonly HashSet<string> bannedNicks = new HashSet<string>();
+    bool joinKicked;
+
+    /// <summary>방장: 강퇴. 봇은 바로 빼고, 사람은 알림을 보낸 뒤 연결을 끊음 (다시 못 들어옴)</summary>
+    public void KickPlayer(int playerId)
+    {
+        if (!IsHost || MatchContext.Active)
+            return;
+        RoomPlayer target = players.Find(p => p.id == playerId);
+        if (target == null || target.isHost)
+            return;
+        players.Remove(target);
+        if (!IsBotId(playerId))
+        {
+            if (!string.IsNullOrEmpty(target.nickname))
+                bannedNicks.Add(target.nickname);
+            SendKickAndDisconnect(playerId);
+        }
+        BroadcastRoom();
+        Error?.Invoke(target.nickname + " 님을 강퇴했어요.");
+    }
+
+    void SendKickAndDisconnect(int playerId)
+    {
+        foreach (PlayerRef p in runner.ActivePlayers)
+        {
+            if (p.PlayerId != playerId)
+                continue;
+            runner.SendReliableDataToPlayer(p, default(ReliableKey), Msg(H2C_Kicked, w => { }));
+            StartCoroutine(DisconnectLater(p));
+            return;
+        }
+    }
+
+    IEnumerator DisconnectLater(PlayerRef p)
+    {
+        yield return new WaitForSecondsRealtime(1f); // 알림이 먼저 도착하게
+        if (runner != null && runner.IsServer)
+            runner.Disconnect(p);
+    }
+
+    /// <summary>(참가자) 방장에게 강퇴당함 → 방 목록으로, 그 방엔 다시 못 들어감</summary>
+    void OnKicked()
+    {
+        string roomName = current != null ? current.roomName : null;
+        if (!string.IsNullOrEmpty(roomName))
+            kickedRooms.Add(roomName);
+        if (!InRoom)
+        {
+            joinKicked = true; // 들어가는 중에 거절됨
+            return;
+        }
+        LeaveRoom(); // 내가 먼저 나가므로 방장 넘기기는 일어나지 않음
+        StartCoroutine(ErrorLater("방장에게 강퇴당했어요."));
     }
 
     IEnumerator ErrorLater(string msg)
@@ -418,6 +590,18 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         return n;
     }
 
+    /// <summary>팀에서 준비된 사람 수 (방장은 항상 준비)</summary>
+    int ReadyCount(int team)
+    {
+        int n = 0;
+        foreach (RoomPlayer p in players)
+        {
+            if (p.team == team && (p.ready || p.isHost))
+                n++;
+        }
+        return n;
+    }
+
     void HostSetReady(int id, bool ready)
     {
         RoomPlayer p = players.Find(x => x.id == id);
@@ -443,7 +627,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         string pw = token != null ? Encoding.UTF8.GetString(token) : "";
         bool pwOk = current == null || !current.HasPassword || pw == current.password;
         bool full = current != null && players.Count >= current.maxPlayers; // 봇이 자리 차지 중
-        if (!pwOk || full || MatchContext.Active)
+        if (!pwOk || full) // 게임 중이어도 자리가 있으면 받음
             request.Refuse();
         else
             request.Accept();
@@ -469,6 +653,13 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     {
         if (players.Exists(p => p.id == player.PlayerId))
             return;
+        if (bannedNicks.Contains(nick ?? ""))
+        {
+            // 강퇴한 사람이 다시 들어옴 → 알리고 내보냄
+            runner.SendReliableDataToPlayer(player, default(ReliableKey), Msg(H2C_Kicked, w => { }));
+            StartCoroutine(DisconnectLater(player));
+            return;
+        }
         int team = TeamCount(RoomPlayer.TeamWinder) < TeamCount(RoomPlayer.TeamTickToy) ? RoomPlayer.TeamWinder : RoomPlayer.TeamTickToy;
         if (pendingTeams.TryGetValue(nick ?? "", out int kept))
             team = kept; // 방장이 바뀌어 다시 모인 경우: 원래 팀 그대로
@@ -476,6 +667,27 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             team = 1 - team;
         players.Add(new RoomPlayer { id = player.PlayerId, nickname = nick, team = team, ready = false });
         BroadcastRoom();
+
+        // 게임 중에 들어옴 → 지금 맵으로 불러서 이번 라운드는 관전, 다음 라운드부터 참가
+        if (MatchContext.Active)
+        {
+            MapEntry map = MapCatalog.Load()?.Get(current.mapIndex);
+            if (map != null)
+            {
+                playersSpawned = false; // 이 사람 네트워크 캐릭터도 만듦
+                runner.SendReliableDataToPlayer(player, default(ReliableKey), Msg(H2C_JoinMatch, w =>
+                {
+                    WriteRoom(w);
+                    w.Write(map.sceneName);
+                    w.Write(MatchContext.Round);
+                    w.Write(MatchContext.TickToyWins);
+                    w.Write(MatchContext.WinderWins);
+                    w.Write((byte)MatchContext.Players.Count);
+                    foreach (RoomPlayer p in MatchContext.Players)
+                        w.Write(p.id); // 이번 라운드를 뛰는 사람들
+                }));
+            }
+        }
     }
 
     void BroadcastRoom()

@@ -10,7 +10,9 @@ public class TickToyHud : MonoBehaviour
         Faint,
         Duplicate,
         OneHit,
-        Trap
+        Trap,
+        Command,
+        Heal
     }
 
     [Header("Status")]
@@ -29,6 +31,8 @@ public class TickToyHud : MonoBehaviour
     [SerializeField] private Sprite duplicateAbilityIcon;
     [SerializeField] private Sprite oneHitAbilityIcon;
     [SerializeField] private Sprite trapAbilityIcon;
+    [SerializeField] private Sprite commandAbilityIcon; // 와인더 명령하기 (DemoScene 에 연결돼 있음)
+    [SerializeField] private Sprite healAbilityIcon;    // 와인더 회복하기 (DemoScene 에 연결돼 있음)
     [SerializeField] private Sprite zeroAbilityIcon;
 
     [Header("UI")]
@@ -83,7 +87,6 @@ public class TickToyHud : MonoBehaviour
         EnsureDamageFlashUi();
         EnsureAbilityTimerVisual();
         HideAbilityTimer();
-        EnsureTrapAbilityIcon();
         if (hpText != null)
         {
             hpTextBaseScale = hpText.rectTransform.localScale;
@@ -93,7 +96,7 @@ public class TickToyHud : MonoBehaviour
 
     void EnsureAbilityTimerVisual()
     {
-        Sprite timerSprite = LoadTimerIconSprite();
+        Sprite timerSprite = timerIconSprite; // 인스펙터에서 연결 (Images/Timer_Icon)
         if (abilityTimerRoot == null)
             return;
 
@@ -161,37 +164,15 @@ public class TickToyHud : MonoBehaviour
         abilityTimerFill.fillAmount = 0f;
     }
 
-    Sprite LoadTimerIconSprite()
-    {
-        if (timerIconSprite != null)
-            return timerIconSprite;
-#if UNITY_EDITOR
-        timerIconSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Images/Timer_Icon.png");
-#endif
-        if (timerIconSprite == null)
-            timerIconSprite = Resources.Load<Sprite>("Timer_Icon");
-        return timerIconSprite;
-    }
-
-    void EnsureTrapAbilityIcon()
-    {
-        if (trapAbilityIcon != null)
-            return;
-#if UNITY_EDITOR
-        trapAbilityIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-            "Assets/Images/Ability/Winder/Ability_Trap_Icon.png");
-#endif
-        if (trapAbilityIcon == null)
-            trapAbilityIcon = Resources.Load<Sprite>("Ability/Ability_Trap_Icon");
-    }
-
     void Update()
     {
+        TickDamageFlashUi();
+        if (spectating)
+            return; // 관전 중: 관전 대상의 화면(ShowSpectated)만 보여 줌
         bool menuOpen = GameSettings.MenuOpen; // 설정 메뉴 / 채팅 입력 중엔 키 입력 무시
         if (!menuOpen)
             UpdateAbilityTestKeys();
         RefreshStopPrompt();
-        TickDamageFlashUi();
         if (!menuOpen && stopPrompt != null && stopPrompt.gameObject.activeSelf && !stopTargetFrozen && Input.GetKeyDown(KeyCode.E))
             GrantOrLevelFromStop();
 
@@ -435,6 +416,83 @@ public class TickToyHud : MonoBehaviour
             abilityTimerRoot.SetActive(false);
     }
 
+    // ---------------- 관전 ----------------
+
+    /// <summary>내 능력 종류(0 = 없음, 1 달리기, 2 기절, 3 분신, 4 황금 몽둥이, 5 덫)·레벨 → 관전자에게 보냄</summary>
+    public int AbilityKindIndex => abilityLevel > 0 ? (int)abilityKind : 0;
+    public int AbilityLevel => abilityLevel;
+    /// <summary>태엽 바 진행 (안 보이면 -1)</summary>
+    public float WindShown => windRoot != null && windRoot.activeSelf ? Mathf.Clamp01(windProgress) : -1f;
+    /// <summary>능력 시계 남은 비율 (안 보이면 -1)</summary>
+    public float TimerShown => abilityTimerRoot != null && abilityTimerRoot.activeSelf && abilityTimerFill != null
+        ? 1f - abilityTimerFill.fillAmount : -1f;
+
+    bool spectating;
+    int spectatedKind = -1;
+    int spectatedLevel = -1;
+
+    /// <summary>관전 중이면 관전 대상의 능력 칸·태엽 바·능력 시계·변장 수를 보여 줌 (on = false 면 끔). 체력은 SetStatus 로</summary>
+    public void ShowSpectated(bool on, int kind, int level, float wind01, float timer01, int disguiseLeft)
+    {
+        if (!on)
+        {
+            if (spectating)
+            {
+                spectating = false;
+                spectatedKind = spectatedLevel = -1;
+                abilityKind = AbilityKind.None;
+                abilityLevel = 0;
+                ShowEmptyAbility();
+                HideGauge();
+            }
+            return;
+        }
+        if (!spectating)
+        {
+            spectating = true;
+            if (stopPrompt != null)
+                stopPrompt.gameObject.SetActive(false);
+        }
+
+        if (kind != spectatedKind || level != spectatedLevel)
+        {
+            spectatedKind = kind;
+            spectatedLevel = level;
+            if (kind <= 0 || level <= 0)
+            {
+                abilityKind = AbilityKind.None;
+                abilityLevel = 0;
+                ShowEmptyAbility();
+            }
+            else
+            {
+                abilityKind = (AbilityKind)kind;
+                abilityLevel = level;
+                ShowAbility();
+            }
+        }
+
+        if (wind01 >= 0f && windRoot != null && windFill != null)
+        {
+            windRoot.SetActive(true);
+            if (windLabel != null)
+            {
+                windLabel.gameObject.SetActive(true);
+                windLabel.text = "태엽을 감는중...";
+            }
+            windFill.rectTransform.anchorMax = new Vector2(Mathf.Clamp01(wind01), 1f);
+        }
+        else if (windRoot != null)
+            windRoot.SetActive(false);
+
+        if (timer01 >= 0f)
+            ShowAbilityTimer(timer01);
+        else
+            HideAbilityTimer();
+
+        SetDisguiseCount(disguiseLeft);
+    }
+
     /// <summary>남은 변장 횟수 표시 (음수 = 숨김, 와인더)</summary>
     public void SetDisguiseCount(int left)
     {
@@ -570,7 +628,6 @@ public class TickToyHud : MonoBehaviour
 
     // 매 프레임 씬 전체 검색하지 않도록 0.5초마다만 다시 찾음
     TickToyMove[] cachedToys = System.Array.Empty<TickToyMove>();
-    WinderMove[] cachedWinders = System.Array.Empty<WinderMove>();
     float charCacheTime = -1f;
 
     void RefreshCharacterCache()
@@ -579,7 +636,6 @@ public class TickToyHud : MonoBehaviour
             return;
         charCacheTime = Time.unscaledTime;
         cachedToys = FindObjectsByType<TickToyMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        cachedWinders = FindObjectsByType<WinderMove>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
     }
 
     bool ShowUsingGauge()
@@ -609,7 +665,7 @@ public class TickToyHud : MonoBehaviour
             usingToy = faintToy;
 
         if (usingToy == null)
-            return ShowWinderRunGauge();
+            return false;
 
         if (usingToy.AbilityDuration <= 0f)
         {
@@ -637,19 +693,6 @@ public class TickToyHud : MonoBehaviour
         abilityTimerFill.fillAmount = elapsed01;
     }
 
-    /// <summary>와인더 달리기 능력 사용 중이면 틱토이처럼 시계 타이머 표시</summary>
-    bool ShowWinderRunGauge()
-    {
-        for (int i = 0; i < cachedWinders.Length; i++)
-        {
-            WinderMove w = cachedWinders[i];
-            if (w == null || !w.enabled || w.RunTimeLeft <= 0f || w.RunDuration <= 0.0001f)
-                continue;
-            ShowAbilityTimer(Mathf.Clamp01(w.RunTimeLeft / w.RunDuration));
-            return true;
-        }
-        return false;
-    }
 
     bool IsAnyTickToyWinding()
     {
@@ -694,6 +737,10 @@ public class TickToyHud : MonoBehaviour
             abilityKind = AbilityKind.OneHit;
         else if (kind == 5)
             abilityKind = AbilityKind.Trap;
+        else if (kind == 6)
+            abilityKind = AbilityKind.Command;
+        else if (kind == 7)
+            abilityKind = AbilityKind.Heal;
         else
             abilityKind = AbilityKind.Run;
         // 황금 몽둥이 / 덫은 레벨 없음
@@ -813,7 +860,6 @@ public class TickToyHud : MonoBehaviour
 
     void ShowAbility()
     {
-        EnsureTrapAbilityIcon();
         Sprite sprite = runAbilityIcon;
         if (abilityKind == AbilityKind.Faint)
             sprite = faintAbilityIcon;
@@ -823,6 +869,10 @@ public class TickToyHud : MonoBehaviour
             sprite = oneHitAbilityIcon;
         else if (abilityKind == AbilityKind.Trap)
             sprite = trapAbilityIcon;
+        else if (abilityKind == AbilityKind.Command)
+            sprite = commandAbilityIcon;
+        else if (abilityKind == AbilityKind.Heal)
+            sprite = healAbilityIcon;
 
         if (abilityIconRoot != null)
             abilityIconRoot.SetActive(true);
@@ -843,6 +893,10 @@ public class TickToyHud : MonoBehaviour
                 abilityFallbackText.text = "황금 몽둥이";
             else if (abilityKind == AbilityKind.Trap)
                 abilityFallbackText.text = "덫";
+            else if (abilityKind == AbilityKind.Command)
+                abilityFallbackText.text = "명령하기";
+            else if (abilityKind == AbilityKind.Heal)
+                abilityFallbackText.text = "회복하기";
             else
                 abilityFallbackText.text = "달리기";
             abilityFallbackText.gameObject.SetActive(sprite == null);

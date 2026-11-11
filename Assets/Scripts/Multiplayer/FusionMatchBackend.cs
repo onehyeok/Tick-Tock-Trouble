@@ -78,11 +78,13 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     const byte H2C_Start = 21;
     const byte H2C_LoadMap = 22;
     const byte H2C_Return = 23;
-    const byte H2C_Phase = 24;
     const byte H2C_Hit = 26;
     const byte H2C_Chat = 27;
     const byte H2C_Event = 28;
     const byte H2C_Abort = 29;     // 상대가 나가 게임 종료 안내
+    const byte H2C_HostTransfer = 30; // 방장이 다른 사람에게 방장을 넘김 (id)
+    const byte H2C_Kicked = 31;       // 방장이 나를 강퇴함
+    const byte H2C_JoinMatch = 32;    // 게임 중에 들어온 사람에게: 지금 맵·라운드 (이번 라운드는 관전)
 
     const int AiIdBase = 10000;
     /// <summary>테스트 봇 id (1000~): 사람 PlayerId 와 AI id 사이</summary>
@@ -90,6 +92,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     int nextBotId = BotIdBase;
 
     static bool IsBotId(int id) => id >= BotIdBase && id < AiIdBase;
+    /// <summary>테스트 봇인지 (방 화면 메뉴에서 사용)</summary>
+    public static bool IsBotPlayer(int id) => IsBotId(id);
 
     NetworkRunner runner;
     string nickname = "";
@@ -108,14 +112,12 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     int nextAiId = AiIdBase;
     bool playersSpawned;
     float aiRefreshTimer;
-    float phaseTimer;
-    int lastSentPhase = -1;
 
-    public bool IsConnected => inLobby || InRoom;
+    public bool IsConnected => inLobby || InRoom || handingOver; // 방장이 바뀌는 중엔 로비에 따로 접속하지 않음
     public bool InRoom { get; private set; }
     public bool IsHost => InRoom && runner != null && runner.IsServer;
     public int LocalPlayerId => InRoom && runner != null ? runner.LocalPlayer.PlayerId : 0;
-    public RoomSettings CurrentRoom => InRoom ? current : null;
+    public RoomSettings CurrentRoom => InRoom || handingOver ? current : null;
     public IReadOnlyList<RoomInfo> Rooms => rooms;
     public IReadOnlyList<RoomPlayer> RoomPlayers => players;
 
@@ -202,9 +204,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         }
 
         lobbyListReceived = false;
-        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
-        if (quitting)
-            return;
+        NetworkRunner lobbyRunner = EnsureRunner();
+        StartGameResult result = await lobbyRunner.JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
+        if (quitting || runner != lobbyRunner)
+            return; // 그 사이 방 연결로 바뀜 → 방 연결을 건드리지 않음
         if (!result.Ok)
         {
             inLobby = false;
@@ -233,9 +236,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         rooms.Clear();
         RoomsChanged?.Invoke();
         runner = null;
-        StartGameResult result = await EnsureRunner().JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
-        if (quitting)
-            return;
+        NetworkRunner lobbyRunner = EnsureRunner();
+        StartGameResult result = await lobbyRunner.JoinSessionLobby(SessionLobby.ClientServer, null, null, null, quitCts.Token);
+        if (quitting || runner != lobbyRunner)
+            return; // 그 사이 방 연결로 바뀜 → 방 연결을 건드리지 않음
         inLobby = result.Ok;
         if (!result.Ok)
         {

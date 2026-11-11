@@ -71,21 +71,17 @@ public class WinderMove : MonoBehaviour
     private Transform spring;
     private Quaternion springBaseRotation;
     private float springDegrees;
-    private const float FullTurnSeconds = 10f;
-    private const int AbilityRun = 1;
+    public const float FullTurnSeconds = 20f; // 등 태엽 한 바퀴 = 능력 하나 (20초)
+    private const int AbilityHeal = 7; // 회복하기 (Lv1 25 / Lv2 50 / Lv3 최대 체력까지)
     private const int AbilityGold = 4; // Brick 황금 몽둥이 (레벨 없음)
     private const int AbilityTrap = 5; // 덫 (레벨 없음, 1회 설치)
-    private const string GoldWeaponPath = "Assets/Models/BrickGoldWeapon/BrickGoldWeapon/BrickGoldWeapon.fbx";
-    private const string TrapModelPath = "Assets/Models/Trap/Trap/Trap.fbx";
+    private const int AbilityCommand = 6; // 명령하기 (레벨 1~3: 틱토이에게 지시가 보이는 시점)
     private const float TrapTargetWidth = 1.35f;
-    private const string TrapMaterialPath = "Assets/Materials/Trap.mat";
     private static readonly Color TrapPreviewValid = new Color(0.15f, 0.7f, 1f, 1f);
     private static readonly Color TrapPreviewInvalid = new Color(1f, 0.12f, 0.1f, 1f);
 
     private int abilityKind;
     private int abilityLevel;
-    private float runTimeLeft;
-    private float runDuration;
     private float faintTimeLeft;
     private bool faintCanBreak;
     private bool faintOnGround;
@@ -109,8 +105,13 @@ public class WinderMove : MonoBehaviour
     public bool IsGoldenClub => goldClubActive;
     /// <summary>황금 몽둥이·덫을 들고 있거나 쓰는 중 (아직 안 때림 / 아직 설치 안 함)</summary>
     public bool SpringPaused => goldClubActive || trapPlacing
-        || ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0);
+        || ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0)
+        || Time.time < commandEndTime; // 명령하기 5초(AI 들이 춤출 때까지)가 끝나야 다시 감김
+    private float commandEndTime;
     public bool IsPlacingTrap => trapPlacing;
+
+    /// <summary>등 태엽이 돈 각도 (0~360) → 다른 사람 화면의 태엽도 같은 각도로</summary>
+    public float SpringDegrees => springDegrees;
 
     public Transform Spring
     {
@@ -139,19 +140,14 @@ public class WinderMove : MonoBehaviour
     [SerializeField] private Vector3 fpsWeaponRotation = new Vector3(4.8f, 206.1f, 328.2f);
     [Tooltip("내 화면 무기 크기 배율")]
     [SerializeField] private float fpsWeaponScale = 0.85f;
-    [Tooltip("달리기(능력) 쓰는 순간 한 번 나오는 흙먼지 바람 이펙트 (프리팹 자식 RunWhoosh, 약 2초)")]
-    [SerializeField] private GameObject runEffect;
-    private ParticleSystem[] runParticles;
     [SerializeField] private int hp = 100;
+    private int maxHp;
 
     public int Hp => hp;
-    /// <summary>달리기 능력 남은 시간 / 총 시간 (HUD 시계 타이머용)</summary>
-    public float RunTimeLeft => runTimeLeft;
-    public float RunDuration => runDuration;
     /// <summary>와인더 1인칭 카메라 (Z 의심 표시 조준)</summary>
     public Camera ViewCamera => fpsCam;
     /// <summary>황금 몽둥이 모델 (다른 사람 화면의 복사본도 이걸 씀)</summary>
-    public GameObject GoldWeaponPrefab => LoadGoldWeaponPrefab(brickGoldWeaponPrefab);
+    public GameObject GoldWeaponPrefab => brickGoldWeaponPrefab; // 인스펙터에서 연결 (Brick 프리팹)
     public bool IsGrounded => isGrounded;
     public bool CanJump => jumpLock <= 0f && jumpCooldown <= 0f && !leftGround;
 
@@ -244,6 +240,7 @@ public class WinderMove : MonoBehaviour
 
     void Awake()
     {
+        maxHp = hp;
         animationController = GetComponent<WinderAnimation>();
         rb = GetComponent<Rigidbody>();
         bodyCollider = GetComponent<CapsuleCollider>();
@@ -515,9 +512,6 @@ public class WinderMove : MonoBehaviour
 
         if (PressedAbilityKey())
             UseAbility();
-
-        if (runTimeLeft > 0f)
-            runTimeLeft -= Time.deltaTime;
 
         switch (State)
         {
@@ -798,7 +792,7 @@ public class WinderMove : MonoBehaviour
         spring.localRotation = springBaseRotation * Quaternion.Euler(0f, -springDegrees, 0f);
     }
 
-    const float GoldChance = 0.2f; // 무작위 능력: 황금 몽둥이 20% / 덫 40% / 달리기 40%
+    const float GoldChance = 0.05f; // 무작위 능력: 황금 몽둥이 5% / 나머지 95% 를 회복하기·덫·명령하기가 똑같이 나눔
 
     void CompleteSpringTurn()
     {
@@ -807,17 +801,25 @@ public class WinderMove : MonoBehaviour
         if ((abilityKind == AbilityGold || abilityKind == AbilityTrap) && abilityLevel > 0)
             return;
 
-        if (abilityKind == AbilityRun && abilityLevel >= 3)
+        if ((abilityKind == AbilityHeal || abilityKind == AbilityCommand) && abilityLevel >= 3)
             return;
 
         if (abilityLevel <= 0)
         {
             float roll = Random.value;
-            abilityKind = roll < GoldChance ? AbilityGold : (roll < GoldChance + (1f - GoldChance) * 0.5f ? AbilityTrap : AbilityRun);
+            float third = (1f - GoldChance) / 3f;
+            if (roll < GoldChance)
+                abilityKind = AbilityGold;
+            else if (roll < GoldChance + third)
+                abilityKind = AbilityHeal;
+            else if (roll < GoldChance + third * 2f)
+                abilityKind = AbilityTrap;
+            else
+                abilityKind = AbilityCommand;
             abilityLevel = 1;
         }
-        else if (abilityKind == AbilityRun)
-            abilityLevel++;
+        else if (abilityKind == AbilityHeal || abilityKind == AbilityCommand)
+            abilityLevel++; // 같은 능력이 또 나오면 레벨 업 (최대 3)
 
         if (hud != null)
             hud.PresentAbility(abilityKind, abilityLevel);
@@ -825,6 +827,25 @@ public class WinderMove : MonoBehaviour
 
     void UpdateTrapTestKey()
     {
+        // 개발자 키 4: 명령하기 (다시 누르면 레벨 업, 최대 3 → Lv2·Lv3 시험용)
+        if ((Input.GetKeyDown(KeyCode.Alpha4) || Input.GetKeyDown(KeyCode.Keypad4)) && State != WinderState.Dead && !trapPlacing)
+        {
+            abilityLevel = abilityKind == AbilityCommand ? Mathf.Min(abilityLevel + 1, 3) : 1;
+            abilityKind = AbilityCommand;
+            if (hud != null)
+                hud.PresentAbility(AbilityCommand, abilityLevel);
+            return;
+        }
+        // 개발자 키 5: 회복하기 (다시 누르면 레벨 업, 최대 3)
+        if ((Input.GetKeyDown(KeyCode.Alpha5) || Input.GetKeyDown(KeyCode.Keypad5)) && State != WinderState.Dead && !trapPlacing)
+        {
+            abilityLevel = abilityKind == AbilityHeal ? Mathf.Min(abilityLevel + 1, 3) : 1;
+            abilityKind = AbilityHeal;
+            if (hud != null)
+                hud.PresentAbility(AbilityHeal, abilityLevel);
+            return;
+        }
+        // 개발자 키 3: 덫
         if (!(Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3)))
             return;
         if (State == WinderState.Dead || trapPlacing)
@@ -848,12 +869,17 @@ public class WinderMove : MonoBehaviour
         if (hud != null)
             hud.ClearPresentedAbility();
 
-        if (kind == AbilityRun)
-            UseRunAbility(level);
+        if (kind == AbilityHeal)
+            UseHealAbility(level);
         else if (kind == AbilityGold)
             UseGoldClubAbility();
         else if (kind == AbilityTrap)
             BeginTrapPlacement();
+        else if (kind == AbilityCommand)
+        {
+            WinderCommand.Use(transform.position, level);
+            commandEndTime = Time.time + WinderCommand.Delay;
+        }
     }
 
     void BeginTrapPlacement()
@@ -1101,13 +1127,6 @@ public class WinderMove : MonoBehaviour
         if (root == null)
             return;
 
-        Material trapMat = null;
-#if UNITY_EDITOR
-        trapMat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(TrapMaterialPath);
-#endif
-        if (trapMat == null)
-            trapMat = Resources.Load<Material>("Trap");
-
         Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
         for (int i = 0; i < renderers.Length; i++)
         {
@@ -1116,8 +1135,6 @@ public class WinderMove : MonoBehaviour
                 continue;
             r.enabled = true;
             r.forceRenderingOff = false;
-            if (trapMat != null && (r.sharedMaterial == null || r.sharedMaterial.shader == null || r.sharedMaterial.shader.name == "Hidden/InternalErrorShader"))
-                r.sharedMaterial = trapMat;
         }
     }
 
@@ -1130,30 +1147,10 @@ public class WinderMove : MonoBehaviour
 
     static GameObject LoadTrapPrefabStatic()
     {
-        // 와인더 프리팹에 지정된 덫 모델 (빌드에서도 에디터와 같은 모델·색)
+        // 와인더(Brick) 프리팹 인스펙터에 연결된 덫 모델 (다른 사람이 설치한 덫도 같은 모델)
         MatchPrefabs prefabs = MatchPrefabs.Load();
         WinderMove winder = prefabs != null && prefabs.winderPrefab != null ? prefabs.winderPrefab.GetComponent<WinderMove>() : null;
-        GameObject prefab = winder != null ? winder.trapPrefab : null;
-        if (prefab != null)
-            return prefab;
-#if UNITY_EDITOR
-        prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(TrapModelPath);
-#endif
-        if (prefab == null)
-            prefab = Resources.Load<GameObject>("Trap");
-        return prefab;
-    }
-
-    static GameObject LoadGoldWeaponPrefab(GameObject assigned)
-    {
-        GameObject prefab = assigned;
-#if UNITY_EDITOR
-        if (prefab == null)
-            prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(GoldWeaponPath);
-#endif
-        if (prefab == null)
-            prefab = Resources.Load<GameObject>("BrickGoldWeapon");
-        return prefab;
+        return winder != null ? winder.trapPrefab : null;
     }
 
     static void StripTrapPreviewColliders(GameObject root)
@@ -1383,30 +1380,17 @@ public class WinderMove : MonoBehaviour
         }
     }
 
-    void UseRunAbility(int level)
+    /// <summary>회복하기: Lv1 +25 / Lv2 +50 / Lv3 최대 체력까지 (최대 체력을 넘지 않음). 초록 이펙트는 모두의 화면에</summary>
+    void UseHealAbility(int level)
     {
-        if (level <= 1)
-            runTimeLeft = 5f;
-        else if (level == 2)
-            runTimeLeft = 8f;
-        else
-            runTimeLeft = 12f;
-        runDuration = runTimeLeft;
-        PlayRunEffect();
-    }
-
-    /// <summary>달리기 능력을 쓰는 순간 슝! (이펙트는 약 2초 뒤 저절로 사라짐)</summary>
-    void PlayRunEffect()
-    {
-        if (runEffect == null)
-            return;
-        if (runParticles == null)
-            runParticles = runEffect.GetComponentsInChildren<ParticleSystem>(true);
-        for (int i = 0; i < runParticles.Length; i++)
-        {
-            runParticles[i].Clear(true);
-            runParticles[i].Play(true);
-        }
+        if (maxHp <= 0)
+            maxHp = 100;
+        int amount = level <= 1 ? 25 : (level == 2 ? 50 : maxHp);
+        hp = Mathf.Min(maxHp, hp + amount);
+        if (hud != null)
+            hud.SetHp(hp);
+        HealEffect.Spawn(transform);
+        FusionMatchBackend.Online?.SendHeal();
     }
 
     void UseFaintAbility(int level)
@@ -1686,7 +1670,7 @@ public class WinderMove : MonoBehaviour
         if (dir.sqrMagnitude < 0.0001f)
             return Vector3.zero;
 
-        float currentSpeed = runTimeLeft > 0f ? moveSpeed * 2f : moveSpeed;
+        float currentSpeed = moveSpeed;
         if (isProne)
             currentSpeed *= proneMoveSpeedMultiplier;
         return dir.normalized * currentSpeed;
