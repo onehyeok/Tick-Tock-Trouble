@@ -29,9 +29,15 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             return false;
         busy = true;
         current = settings;
+        // 새로 만드는 방이면 새 고유 번호 (방장이 바뀌어 다시 여는 방은 원래 번호 그대로 → 강퇴 기록 유지)
+        if (!handover || string.IsNullOrEmpty(settings.roomId))
+            settings.roomId = Guid.NewGuid().ToString("N").Substring(0, 12);
+        if (!handover)
+            bannedNicks.Clear(); // 새 방: 예전 방에서 강퇴한 사람도 들어올 수 있음
 
         Dictionary<string, SessionProperty> props = new Dictionary<string, SessionProperty>
         {
+            { "rid", settings.roomId },
             { "map", settings.mapIndex },
             { "rounds", settings.rounds },
             { "lock", settings.HasPassword ? 1 : 0 },
@@ -95,12 +101,12 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public void JoinRoom(string roomName, string password)
     {
-        if (kickedRooms.Contains(roomName))
+        RoomInfo info = rooms.Find(x => x.name == roomName);
+        if (info != null && IsKickedRoom(info.roomId))
         {
             Error?.Invoke(KickedJoinMessage);
             return;
         }
-        RoomInfo info = rooms.Find(x => x.name == roomName);
         if (info != null && !info.IsJoinable)
         {
             Error?.Invoke("방이 꽉 찼어요.");
@@ -111,7 +117,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     public void JoinRandom()
     {
-        List<RoomInfo> open = rooms.FindAll(x => x.IsJoinable && !x.locked && !kickedRooms.Contains(x.name));
+        List<RoomInfo> open = rooms.FindAll(x => x.IsJoinable && !x.locked && !IsKickedRoom(x.roomId));
         if (open.Count == 0)
         {
             Error?.Invoke("참가할 수 있는 방이 없어요.");
@@ -221,7 +227,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         {
             runner = null;
             if (joinKicked)
-                kickedRooms.Add(roomName);
+            {
+                RoomInfo kickedFrom = rooms.Find(x => x.name == roomName);
+                if (kickedFrom != null && !string.IsNullOrEmpty(kickedFrom.roomId))
+                    kickedRooms.Add(kickedFrom.roomId);
+            }
             if (silent)
                 return false;
             string msg;
@@ -463,8 +473,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     }
 
     const string KickedJoinMessage = "강퇴 당한 방이라서 들어갈 수 없어요.";
-    /// <summary>내가 강퇴당한 방 이름 (게임을 끌 때까지 다시 못 들어감)</summary>
+    /// <summary>내가 강퇴당한 방의 고유 번호 (게임을 끌 때까지 그 방엔 다시 못 들어감. 같은 이름으로 새로 만든 방은 들어감)</summary>
     readonly HashSet<string> kickedRooms = new HashSet<string>();
+
+    bool IsKickedRoom(string roomId) => !string.IsNullOrEmpty(roomId) && kickedRooms.Contains(roomId);
     /// <summary>방장: 강퇴한 사람 닉네임 (다시 들어오려 하면 바로 내보냄)</summary>
     readonly HashSet<string> bannedNicks = new HashSet<string>();
     bool joinKicked;
@@ -510,9 +522,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     /// <summary>(참가자) 방장에게 강퇴당함 → 방 목록으로, 그 방엔 다시 못 들어감</summary>
     void OnKicked()
     {
-        string roomName = current != null ? current.roomName : null;
-        if (!string.IsNullOrEmpty(roomName))
-            kickedRooms.Add(roomName);
+        // 들어가는 중이면 아직 방 정보가 없음 → 방 목록에서 고유 번호를 찾음
+        string roomId = current != null && !string.IsNullOrEmpty(current.roomId) ? current.roomId
+            : (current != null ? rooms.Find(x => x.name == current.roomName)?.roomId : null);
+        if (!string.IsNullOrEmpty(roomId))
+            kickedRooms.Add(roomId);
         if (!InRoom)
         {
             joinKicked = true; // 들어가는 중에 거절됨
@@ -702,6 +716,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     void WriteRoom(BinaryWriter w)
     {
         w.Write(current.roomName ?? "");
+        w.Write(current.roomId ?? "");
         w.Write(current.mapIndex);
         w.Write(current.rounds);
         w.Write(current.maxPlayers);
@@ -722,6 +737,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         current = new RoomSettings
         {
             roomName = rd.ReadString(),
+            roomId = rd.ReadString(),
             mapIndex = rd.ReadInt32(),
             rounds = rd.ReadInt32(),
             maxPlayers = rd.ReadInt32()
@@ -755,6 +771,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             nicks.Add(p.nickname);
         runner.SessionInfo.UpdateCustomProperties(new Dictionary<string, SessionProperty>
         {
+            { "rid", current.roomId ?? "" },
             { "map", current.mapIndex },
             { "rounds", current.rounds },
             { "lock", current.HasPassword ? 1 : 0 },

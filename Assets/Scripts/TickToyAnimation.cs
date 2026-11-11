@@ -195,6 +195,7 @@ public class TickToyAnimation : MonoBehaviour
                 winder.Freeze(5f);
             else
                 FusionMatchBackend.Online?.SendWinderStop(remoteWinder.NetId);
+            MatchStats.Stops++; // 내 기록: 와인더 정지 횟수
             // "틱토이가 태엽을 정지시켰어요!" 안내는 와인더 화면에만 (FusionMatchBackend.ApplyGameEvent)
         }
     }

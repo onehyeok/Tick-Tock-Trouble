@@ -1075,6 +1075,7 @@ public class TickToyMove : MonoBehaviour
         int kind = grantedAbility;
         int level = grantedLevel;
         grantedLevel = 0;
+        MatchStats.Abilities++; // 내 기록: 능력 사용 수
 
         if (kind == 1)
             UseRunAbility(level);

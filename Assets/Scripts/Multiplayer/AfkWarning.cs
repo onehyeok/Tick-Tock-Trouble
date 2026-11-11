@@ -2,12 +2,15 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>게임 중 1분 넘게 아무 조작(키·마우스)이 없으면 "움직이지 않으면 잠시 후 방에서 추방됩니다" 안내.
-/// 조작하면 바로 사라짐. 살아 있을 때만 (관전·결과 화면 제외). UI 는 DemoScene 에 미리 만들어져 있음</summary>
+/// 조작하면 바로 사라짐. 안내가 뜬 뒤 5초 동안도 조작이 없으면 방에서 나가 로비로.
+/// 살아 있을 때만 (관전·결과 화면 제외). UI 는 DemoScene 에 미리 만들어져 있음</summary>
 public class AfkWarning : MonoBehaviour
 {
     public Text warningText;
 
     const float IdleSeconds = 60f;
+    const float KickSeconds = 5f; // 안내가 뜬 뒤 이만큼 더 가만히 있으면 추방
+    bool kicked;
     float idle;
     Vector3 lastMouse;
 
@@ -29,6 +32,19 @@ public class AfkWarning : MonoBehaviour
         bool show = idle >= IdleSeconds;
         if (warningText != null && warningText.gameObject.activeSelf != show)
             warningText.gameObject.SetActive(show);
+
+        if (idle >= IdleSeconds + KickSeconds && !kicked)
+            Kick();
+    }
+
+    /// <summary>방에서 나가 로비(방 목록)로</summary>
+    void Kick()
+    {
+        kicked = true;
+        MatchContext.Active = false;
+        MatchContext.ReturnToRoom = false;
+        MatchService.Backend?.LeaveRoom();
+        UnityEngine.SceneManagement.SceneManager.LoadScene(MatchService.LobbyScene);
     }
 
     bool HasInput()

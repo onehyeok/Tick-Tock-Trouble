@@ -268,7 +268,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         if (target == null || !InRoom)
             return;
         if (IsHost)
-            RouteHit(target.NetId, damage);
+            RouteHit(target.NetId, damage, LocalPlayerId);
         else
             SendToHost(Msg(C2H_Hit, w =>
             {
@@ -277,7 +277,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             }));
     }
 
-    void RouteHit(int targetId, int damage)
+    /// <summary>맞은 사람에게 피해 전달 (때린 와인더 id 도 같이 → 쓰러지면 그 와인더의 '잡은 틱토이' 기록)</summary>
+    void RouteHit(int targetId, int damage, int attackerId)
     {
         if (targetId >= AiIdBase)
         {
@@ -287,14 +288,14 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         }
         if (targetId == LocalPlayerId)
         {
-            RoundManager.Instance?.ApplyNetHit(damage);
+            RoundManager.Instance?.ApplyNetHit(damage, attackerId);
             return;
         }
         foreach (PlayerRef p in runner.ActivePlayers)
         {
             if (p.PlayerId == targetId)
             {
-                runner.SendReliableDataToPlayer(p, default(ReliableKey), Msg(H2C_Hit, w => w.Write(damage)));
+                runner.SendReliableDataToPlayer(p, default(ReliableKey), Msg(H2C_Hit, w => { w.Write(damage); w.Write(attackerId); }));
                 return;
             }
         }
@@ -416,6 +417,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         inp.Round = MatchContext.Round;
         rm.LocalHudState(out inp.Hud, out inp.HudWind, out inp.HudTimer);
         inp.Spring = rm.LocalSpringDegrees;
+        inp.StatSurvive = (int)MatchStats.SurviveSeconds;
+        inp.StatStops = MatchStats.Stops;
+        inp.StatAbilities = MatchStats.Abilities;
+        inp.StatKills = MatchStats.Kills;
         input.Set(inp);
     }
 
@@ -448,6 +453,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     public const byte EvMark = 6;
     public const byte EvCommand = 7;
     public const byte EvHeal = 8;
+    public const byte EvKill = 9;
 
     /// <summary>내가 한 일을 모두에게 알림 (나는 이미 내 화면에서 했으므로 다시 하지 않음)</summary>
     void SendGameEvent(byte kind, Action<BinaryWriter> body)
@@ -477,6 +483,9 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     /// <summary>와인더 Z: 의심되는 틱토이(사람·AI) 표시 → 모두의 화면에 빨간 테두리</summary>
     public void SendMark(int targetId) =>
         SendGameEvent(EvMark, w => w.Write(targetId));
+
+    /// <summary>내 틱토이가 쓰러짐 → 때린 와인더의 '잡은 틱토이' 기록 +1 (그 와인더 화면에서 셈)</summary>
+    public void SendKill(int attackerId) => SendGameEvent(EvKill, w => w.Write(attackerId));
 
     /// <summary>와인더 회복하기: 다른 화면의 내 브릭 주변에도 초록 이펙트</summary>
     public void SendHeal() => SendGameEvent(EvHeal, w => { });
@@ -547,6 +556,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             }
             case EvMark:
                 SuspectMarks.Add(rd.ReadInt32(), null);
+                break;
+            case EvKill:
+                if (rd.ReadInt32() == LocalPlayerId)
+                    MatchStats.Kills++;
                 break;
             case EvHeal:
             {

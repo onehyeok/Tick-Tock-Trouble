@@ -573,8 +573,20 @@ public class RoundManager : MonoBehaviour
         countdownMsgLeft = seconds;
     }
 
+    /// <summary>내 기록: 추격 시간 동안 살아 있으면 따돌린 시간 +, 와인더에게 쓰러지면 그 와인더에게 알림</summary>
+    void UpdateStats()
+    {
+        bool alive = localTickToy != null && !localTickToy.IsDead && !LateSpectator;
+        if (alive && phase == Phase.Hunt && !aborted)
+            MatchStats.SurviveSeconds += Time.deltaTime;
+        if (wasTickToyAlive && !alive && localTickToy != null && localTickToy.IsDead && lastAttackerId != 0)
+            FusionMatchBackend.Online?.SendKill(lastAttackerId);
+        wasTickToyAlive = alive;
+    }
+
     void Update()
     {
+        UpdateStats();
         UpdateSpectate();
         SuspectMarks.Tick();
         UpdateWinderMark();
@@ -956,8 +968,13 @@ public class RoundManager : MonoBehaviour
         Cursor.visible = true;
     }
 
-    public void ApplyNetHit(int damage)
+    /// <summary>나를 마지막으로 때린 와인더 (쓰러지면 그 와인더 기록 +1)</summary>
+    int lastAttackerId;
+    bool wasTickToyAlive;
+
+    public void ApplyNetHit(int damage, int attackerId)
     {
+        lastAttackerId = attackerId;
         if (localTickToy != null && !localTickToy.IsDead)
             localTickToy.TakeHit(damage);
         else if (localWinder != null && !localWinder.IsDead)

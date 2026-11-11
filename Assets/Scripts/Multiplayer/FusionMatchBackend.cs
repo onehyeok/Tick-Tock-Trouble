@@ -273,6 +273,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             RoomInfo info = new RoomInfo
             {
                 name = s.Name,
+                roomId = PropString(s, "rid"),
                 players = s.PlayerCount,
                 maxPlayers = s.MaxPlayers,
                 mapIndex = PropInt(s, "map", 0),

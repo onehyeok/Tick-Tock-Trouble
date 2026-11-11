@@ -17,6 +17,8 @@ public class MapEntry
 public class RoomSettings
 {
     public string roomName = "";
+    /// <summary>방마다 새로 만드는 고유 번호 (같은 이름으로 새로 만든 방과 구분 → 강퇴 기록은 이 번호로). 방장이 바뀌어도 그대로</summary>
+    public string roomId = "";
     public int mapIndex;
     public int maxPlayers = MatchContext.TeamSize * 2;
     public string password = "";
@@ -29,6 +31,7 @@ public class RoomSettings
 public class RoomInfo
 {
     public string name;
+    public string roomId;
     public int mapIndex;
     public int players;
     public int maxPlayers;
@@ -104,6 +107,7 @@ public static class MatchContext
         WinderWins = 0;
         TickToyWins = 0;
         ReturnToRoom = false;
+        MatchStats.Reset();
         AssignRolesFromTeams();
     }
 

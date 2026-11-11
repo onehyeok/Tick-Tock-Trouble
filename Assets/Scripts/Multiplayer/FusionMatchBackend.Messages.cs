@@ -120,7 +120,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 int target = rd.ReadInt32();
                 int damage = rd.ReadInt32();
                 if (MatchContext.Active)
-                    RouteHit(target, damage);
+                    RouteHit(target, damage, from.PlayerId);
                 break;
             }
         }
@@ -188,8 +188,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 break;
 
             case H2C_Hit:
-                RoundManager.Instance?.ApplyNetHit(rd.ReadInt32());
+            {
+                int damage = rd.ReadInt32();
+                RoundManager.Instance?.ApplyNetHit(damage, rd.ReadInt32());
                 break;
+            }
 
             case H2C_Chat:
             {

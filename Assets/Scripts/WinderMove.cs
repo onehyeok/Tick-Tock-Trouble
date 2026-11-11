@@ -866,6 +866,8 @@ public class WinderMove : MonoBehaviour
         int level = abilityLevel;
         abilityKind = 0;
         abilityLevel = 0;
+        if (kind != AbilityTrap)
+            MatchStats.Abilities++; // 내 기록: 능력 사용 수 (덫은 실제로 설치할 때 셈)
         if (hud != null)
             hud.ClearPresentedAbility();
 
@@ -1212,6 +1214,7 @@ public class WinderMove : MonoBehaviour
     {
         if (WinderTrap.IsPlacementBlocked(trapPlacePos))
             return;
+        MatchStats.Abilities++;
 
         GameObject prefab = LoadTrapPrefab();
         if (prefab == null)

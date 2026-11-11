@@ -19,6 +19,7 @@ public struct NetPoseInput : INetworkInput
     public float HudWind;  // 태엽 바 진행 (0~1, 안 감으면 -1)
     public float HudTimer; // 능력 시계 남은 비율 (0~1, 없으면 -1)
     public float Spring;   // 와인더 등 태엽 각도 (0~360)
+    public int StatSurvive, StatStops, StatAbilities, StatKills; // 내 기록 (매치 합계, MatchStats)
 
     public bool Valid => (Info & (1 << 17)) != 0;
 
@@ -96,6 +97,11 @@ public class NetCharacter : NetworkBehaviour
     [Networked] public float HudTimer { get; set; }
     /// <summary>와인더 등 태엽 각도 → 모두의 화면에서 같은 각도로 돌아감</summary>
     [Networked] public float SpringDeg { get; set; }
+    /// <summary>Tab 플레이어 창: 따돌린 시간(초)·와인더 정지·능력 사용·잡은 틱토이 (매치 합계, 본인이 보낸 값)</summary>
+    [Networked] public int StatSurvive { get; set; }
+    [Networked] public int StatStops { get; set; }
+    [Networked] public int StatAbilities { get; set; }
+    [Networked] public int StatKills { get; set; }
     [Networked, Capacity(6)] public NetworkArray<int> Hashes => default;
     [Networked, Capacity(6)] public NetworkArray<float> Weights => default;
     [Networked, Capacity(12)] public NetworkArray<float> Params => default;
@@ -170,6 +176,13 @@ public class NetCharacter : NetworkBehaviour
         // 방장: 사람 플레이어 (본인이 보낸 입력). 관전만 하는 사람(게임 중에 들어옴)은 관전 대상만 옴
         if (GetInput(out NetPoseInput spec) && !spec.Valid)
             Spectating = spec.Spectate;
+        if (GetInput(out NetPoseInput stats))
+        {
+            StatSurvive = stats.StatSurvive;
+            StatStops = stats.StatStops;
+            StatAbilities = stats.StatAbilities;
+            StatKills = stats.StatKills;
+        }
         if (GetInput(out NetPoseInput inp) && inp.Valid)
         {
             Pos = inp.Pos;
