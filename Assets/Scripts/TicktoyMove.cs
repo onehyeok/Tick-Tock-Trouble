@@ -1112,12 +1112,7 @@ public class TickToyMove : MonoBehaviour
         if (State == TickToyState.Dead)
             return;
 
-        if (level <= 1)
-            runDuration = 5f;
-        else if (level == 2)
-            runDuration = 8f;
-        else
-            runDuration = 12f;
+        runDuration = AbilitySettings.ByLevel(AbilitySettings.Current.runSeconds, level);
 
         abilityDuration = runDuration;
         runTimeLeft = runDuration;
@@ -1145,12 +1140,7 @@ public class TickToyMove : MonoBehaviour
             rb.isKinematic = false;
             rb.useGravity = true;
         }
-        if (level <= 1)
-            faintDuration = 10f;
-        else if (level == 2)
-            faintDuration = 20f;
-        else
-            faintDuration = -1f;
+        faintDuration = AbilitySettings.ByLevel(AbilitySettings.Current.faintSeconds, level); // -1 = 직접 일어날 때까지
 
         abilityDuration = faintDuration;
         faintTimeLeft = faintDuration;
@@ -1161,23 +1151,8 @@ public class TickToyMove : MonoBehaviour
         if (State == TickToyState.Dead)
             return;
 
-        int cloneCount;
-        float duplicateDuration;
-        if (level <= 1)
-        {
-            duplicateDuration = 3f;
-            cloneCount = 1;
-        }
-        else if (level == 2)
-        {
-            duplicateDuration = 5f;
-            cloneCount = 2;
-        }
-        else
-        {
-            duplicateDuration = 7f;
-            cloneCount = 4;
-        }
+        int cloneCount = AbilitySettings.ByLevel(AbilitySettings.Current.duplicateCount, level);
+        float duplicateDuration = AbilitySettings.ByLevel(AbilitySettings.Current.duplicateSeconds, level);
 
         // 달리기/드러눕기 타이머용 abilityDuration·runDuration은 건드리지 않음
         duplicateTimeLeft = duplicateDuration;

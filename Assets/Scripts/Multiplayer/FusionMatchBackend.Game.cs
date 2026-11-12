@@ -224,6 +224,13 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 n++; // 테스트 봇은 항상 살아있음 (오프라인 봇과 같음)
                 continue;
             }
+            // 게임 중 방장이 바뀌어 아직 다시 연결 중인 사람: 나가기 직전 상태로 셈
+            if (PendingRejoin(p, out bool pendingAlive))
+            {
+                if (pendingAlive)
+                    n++;
+                continue;
+            }
             if (!connected.Contains(p.id))
                 continue;
             // 이번 라운드에 보낸 상태로만 판단 (이전 라운드에 쓰러진 값이 남아 있어도 살아있는 것으로)
@@ -303,11 +310,13 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     void Update()
     {
+        UpdateHandoverGhosts();
         if (!InRoom || runner == null || !MatchContext.Active)
             return;
         if (!IsHost)
         {
             ClientFollowNetwork();
+            ClientRememberAIs(); // 방장이 나가면 새 방장이 AI 를 이어받을 수 있게
             return;
         }
         RoundManager rm = RoundManager.Instance;
@@ -421,6 +430,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         inp.StatStops = MatchStats.Stops;
         inp.StatAbilities = MatchStats.Abilities;
         inp.StatKills = MatchStats.Kills;
+        inp.StatDeaths = MatchStats.Deaths;
         input.Set(inp);
     }
 
@@ -544,7 +554,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 int target = rd.ReadInt32();
                 RoundManager rm = RoundManager.Instance;
                 if (target == LocalPlayerId)
-                    rm?.ApplyWinderStop(5f);
+                    rm?.ApplyWinderStop(AbilitySettings.Current.winderStopSeconds);
                 // 안내는 와인더에게만
                 if (rm != null && rm.LocalIsWinderRole)
                 {

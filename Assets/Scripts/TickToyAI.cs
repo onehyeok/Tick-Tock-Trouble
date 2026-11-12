@@ -160,6 +160,82 @@ public class TickToyAI : MonoBehaviour
         stateTimer = Random.Range(0.3f, 1f);
     }
 
+    bool spawnDown;
+
+    // ---------------- 방장이 바뀔 때 하던 동작을 그대로 이어받기 ----------------
+    /// <summary>지금 하던 동작 (0 Idle, 1 Run, 2 Prone, 3 Jump)</summary>
+    public int StateIndex => (int)state;
+    /// <summary>지금 동작 남은 시간</summary>
+    public float StateLeft => stateTimer;
+    /// <summary>걷는 방향 (각도)</summary>
+    public float MoveYaw => Quaternion.LookRotation(moveDir.sqrMagnitude > 0.0001f ? moveDir : Vector3.forward).eulerAngles.y;
+    /// <summary>명령하기로 이모트할 때까지 남은 시간 (-1 = 명령 없음)</summary>
+    public float CommandLeft => commandEmoteAt > 0f ? Mathf.Max(0f, commandEmoteAt - Time.time) : -1f;
+    public int CommandEmote => commandEmote;
+    /// <summary>지금 하고 있는 이모트 (-1 = 안 함)</summary>
+    public int EmotingIndex => emoteEnd >= 0f ? System.Array.IndexOf(EmoteStates, emoteState) : -1;
+
+    bool restore;
+    int restoreState;
+    float restoreLeft, restoreYaw, restoreCommandLeft;
+    int restoreCommandEmote, restoreEmoting;
+
+    /// <summary>시작할 때 이전 방장 화면에서 하던 동작을 그대로 이어서 함</summary>
+    public void RestoreState(int stateIndex, float left, float yaw, float commandLeft, int commandEmoteIndex, int emoting)
+    {
+        restore = true;
+        restoreState = stateIndex;
+        restoreLeft = left;
+        restoreYaw = yaw;
+        restoreCommandLeft = commandLeft;
+        restoreCommandEmote = commandEmoteIndex;
+        restoreEmoting = emoting;
+    }
+
+    void ApplyRestore()
+    {
+        settled = true;
+        settleTimer = 0f;
+        lastProgressPos = transform.position;
+        moveDir = Quaternion.Euler(0f, restoreYaw, 0f) * Vector3.forward;
+        if (restoreState == (int)AiState.Run)
+        {
+            // 같은 방향으로 남은 시간만큼 계속 걷기
+            state = AiState.Run;
+            currentSpeed = walkSpeed;
+            stuckTimer = 0f;
+            if (rb != null)
+                rb.MoveRotation(Quaternion.LookRotation(moveDir, Vector3.up));
+            SetAnimMove(new Vector2(0f, 1f), false);
+        }
+        else if (restoreState == (int)AiState.Prone)
+            EnterProne();
+        else
+            EnterIdle(); // 점프 중이었으면 제자리에서 이어감
+        stateTimer = Mathf.Max(0.3f, restoreLeft);
+
+        if (restoreCommandLeft >= 0f)
+        {
+            // 명령받아 기다리던 중 → 남은 시간 뒤에 같은 이모트
+            EnterIdle();
+            stateTimer = restoreCommandLeft + 0.5f;
+            commandEmoteAt = Time.time + restoreCommandLeft;
+            commandEmote = restoreCommandEmote;
+        }
+        else if (restoreEmoting >= 0)
+        {
+            // 이모트 중이었음 → 같은 이모트를 다시 (중간부터는 이을 수 없어 처음부터)
+            EnterIdle();
+            PlayEmote(restoreEmoting);
+        }
+    }
+
+    /// <summary>처음부터 쓰러진 채로 시작 (게임 중 방장이 바뀌어 AI 를 이어받을 때, 쓰러져 있던 AI 를 그대로 두기 위함)</summary>
+    public void SpawnDown()
+    {
+        spawnDown = true;
+    }
+
     /// <summary>분신 스폰 직후 대기 없이 바로 Run.</summary>
     public void BeginMovingNow()
     {
@@ -195,6 +271,20 @@ public class TickToyAI : MonoBehaviour
     void Start()
     {
         ForceToGround(true);
+        if (spawnDown)
+        {
+            // 쓰러지는 동작을 끝까지 넘긴 채(이미 누워 있는 모습)로 시작
+            settled = true;
+            Die();
+            if (animator != null)
+                animator.Play("Die", 0, 1f);
+            return;
+        }
+        if (restore)
+        {
+            ApplyRestore();
+            return;
+        }
         if (startMovingNow)
         {
             settled = true;

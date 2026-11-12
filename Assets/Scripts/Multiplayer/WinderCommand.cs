@@ -2,20 +2,20 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 와인더 능력 "명령하기": R → 와인더 발밑 빨간 원(반지름 5m) 안의 틱토이 AI 는 5초 동안 가만히 있다가 지정된 이모트(Z/X/C)를 함.
+/// 와인더 능력 "명령하기": R → 와인더 발밑 빨간 원(반지름 6m) 안의 틱토이 AI 는 5초 동안 가만히 있다가 지정된 이모트(Z/X/C)를 함.
 /// 원 안의 틱토이 플레이어는 멈추지 않고, 화면에 5초 카운트다운 + 지시(레벨에 따라 3초 전 / 1초 전 / 안 알려줌)가 뜸.
 /// 와인더는 바로 "5초 후 Z키 사용" 이 보임. 원은 모든 사람 화면에 보임.
 /// </summary>
 public static class WinderCommand
 {
-    public const float Radius = 5f;
-    public const float Delay = 5f;
+    public static float Radius => AbilitySettings.Current.commandRadius;
+    public static float Delay => AbilitySettings.Current.commandDelay;
     static readonly string[] Keys = { "Z", "X", "C" };
 
     public static string KeyName(int emote) => Keys[Mathf.Clamp(emote, 0, Keys.Length - 1)];
 
     /// <summary>레벨별로 틱토이 플레이어에게 지시를 보여 주는 시점 (남은 초). Lv1 = 3초 전, Lv2 = 1초 전, Lv3 = 안 알려줌</summary>
-    public static float RevealLeft(int level) => level <= 1 ? 3f : (level == 2 ? 1f : -1f);
+    public static float RevealLeft(int level) => AbilitySettings.ByLevel(AbilitySettings.Current.commandReveal, level);
 
     /// <summary>와인더(나): 원 안의 대상을 모아 명령. 방장/오프라인이면 진짜 AI 에 바로, 다른 화면엔 이벤트로</summary>
     public static void Use(Vector3 center, int level)

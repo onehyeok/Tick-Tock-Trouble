@@ -7,7 +7,7 @@ using UnityEngine;
 /// </summary>
 public static class SuspectMarks
 {
-    public const float ShowSeconds = 3f;
+    public static float ShowSeconds => AbilitySettings.Current.markSeconds;
 
     class Mark
     {

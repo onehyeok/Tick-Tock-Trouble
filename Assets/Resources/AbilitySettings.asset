@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c9a234060d5bb8047bd55a91675adab2, type: 3}
+  m_Name: AbilitySettings
+  m_EditorClassIdentifier: Assembly-CSharp::AbilitySettings
+  runSeconds:
+  - 5
+  - 8
+  - 12
+  faintSeconds:
+  - 10
+  - 20
+  - -1
+  duplicateSeconds:
+  - 3
+  - 5
+  - 7
+  duplicateCount: 010000000200000004000000
+  disguiseUses: 5
+  disguiseReach: 2.5
+  winderStopSeconds: 5
+  springTurnSeconds: 20
+  goldChance: 0.05
+  healAmount: 1900000032000000ffffffff
+  commandReveal:
+  - 3
+  - 1
+  - -1
+  commandRadius: 6
+  commandDelay: 5
+  markSeconds: 3
+  markCooldown: 10
+  hintStartLeft: 120
+  hintFullDistance: 10
+  hintEmptyDistance: 35

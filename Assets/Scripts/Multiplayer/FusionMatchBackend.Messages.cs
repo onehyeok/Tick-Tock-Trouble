@@ -222,6 +222,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             case H2C_Kicked:
                 OnKicked();
                 break;
+
+            case H2C_Roster:
+                ReadRoster(rd);
+                break;
         }
     }
 }

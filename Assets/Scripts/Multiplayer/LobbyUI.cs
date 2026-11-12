@@ -381,7 +381,7 @@ public class LobbyUI : MonoBehaviour
                 list = playerListContent;
             Text item = Instantiate(playerItemTemplate, list);
             item.gameObject.SetActive(true);
-            string tag = p.isHost ? "  [방장]" : (p.ready ? "  준비 완료" : "  대기 중");
+            string tag = p.connecting ? "  연결 중…" : (p.isHost ? "  [방장]" : (p.ready ? "  준비 완료" : "  대기 중"));
             item.text = (p.isLocal ? "★ " : "") + p.nickname + tag;
             item.color = p.isHost || p.ready ? UIKit.Brown : UIKit.Gray;
             // 방장: 다른 사람 이름을 우클릭 → 방장 넘기기 / 강퇴하기
@@ -408,7 +408,10 @@ public class LobbyUI : MonoBehaviour
         bool host = backend.IsHost;
         startButton.gameObject.SetActive(host);
         readyButton.gameObject.SetActive(!host);
-        startButton.interactable = players.Count >= MinPlayers && canStart;
+        bool connecting = false;
+        foreach (RoomPlayer p in players)
+            connecting |= p.connecting;
+        startButton.interactable = players.Count >= MinPlayers && canStart && !connecting; // 다시 들어오는 중인 사람이 있으면 잠깐 기다림
         string startLabel = !bothTeams ? "양쪽 팀에 1명씩 필요" : (canStart ? "게임 시작!" : "준비 기다리는 중");
         UIKit.SetText(startButton, startLabel);
         UIKit.SetText(readyButton, localReady ? "준비 취소" : "준비");
@@ -432,7 +435,7 @@ public class LobbyUI : MonoBehaviour
     void OpenPlayerMenu(RoomPlayer target, PointerEventData e)
     {
         FusionMatchBackend online = backend as FusionMatchBackend;
-        if (online == null || !online.IsHost || target.isLocal || target.isHost || playerMenu == null)
+        if (online == null || !online.IsHost || target.isLocal || target.isHost || target.connecting || playerMenu == null)
             return;
         menuTarget = target;
         playerMenuTitle.text = target.nickname;

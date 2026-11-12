@@ -56,6 +56,8 @@ public class RoomPlayer
     public bool ready;
     public bool isHost;
     public bool isLocal;
+    /// <summary>방장이 바뀌는 중 아직 새 방에 다시 들어오지 않은 사람 (목록에서 사라지지 않게 보여 주기만 함)</summary>
+    public bool connecting;
 }
 
 public static class PlayerProfile
@@ -83,6 +85,8 @@ public static class MatchContext
     public const int TeamSize = 8;
 
     public static bool Active;
+    /// <summary>게임 중 방장이 나가 새 방장에게 다시 연결되는 중 (이 동안은 아무도 라운드를 끝내지 않음)</summary>
+    public static bool Migrating;
     public static RoomSettings Settings = new RoomSettings();
     public static readonly List<RoomPlayer> Players = new List<RoomPlayer>();
     public static readonly List<int> WinderIds = new List<int>();

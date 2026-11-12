@@ -71,7 +71,6 @@ public class WinderMove : MonoBehaviour
     private Transform spring;
     private Quaternion springBaseRotation;
     private float springDegrees;
-    public const float FullTurnSeconds = 20f; // 등 태엽 한 바퀴 = 능력 하나 (20초)
     private const int AbilityHeal = 7; // 회복하기 (Lv1 25 / Lv2 50 / Lv3 최대 체력까지)
     private const int AbilityGold = 4; // Brick 황금 몽둥이 (레벨 없음)
     private const int AbilityTrap = 5; // 덫 (레벨 없음, 1회 설치)
@@ -782,7 +781,7 @@ public class WinderMove : MonoBehaviour
         if (SpringPaused)
             return;
 
-        springDegrees += 360f / FullTurnSeconds * Time.deltaTime;
+        springDegrees += 360f / AbilitySettings.Current.springTurnSeconds * Time.deltaTime; // 한 바퀴 = 능력 하나
         while (springDegrees >= 360f)
         {
             springDegrees -= 360f;
@@ -792,7 +791,6 @@ public class WinderMove : MonoBehaviour
         spring.localRotation = springBaseRotation * Quaternion.Euler(0f, -springDegrees, 0f);
     }
 
-    const float GoldChance = 0.05f; // 무작위 능력: 황금 몽둥이 5% / 나머지 95% 를 회복하기·덫·명령하기가 똑같이 나눔
 
     void CompleteSpringTurn()
     {
@@ -806,13 +804,15 @@ public class WinderMove : MonoBehaviour
 
         if (abilityLevel <= 0)
         {
+            // 무작위 능력: 황금 몽둥이 goldChance / 나머지를 회복하기·덫·명령하기가 똑같이 나눔
+            float goldChance = AbilitySettings.Current.goldChance;
             float roll = Random.value;
-            float third = (1f - GoldChance) / 3f;
-            if (roll < GoldChance)
+            float third = (1f - goldChance) / 3f;
+            if (roll < goldChance)
                 abilityKind = AbilityGold;
-            else if (roll < GoldChance + third)
+            else if (roll < goldChance + third)
                 abilityKind = AbilityHeal;
-            else if (roll < GoldChance + third * 2f)
+            else if (roll < goldChance + third * 2f)
                 abilityKind = AbilityTrap;
             else
                 abilityKind = AbilityCommand;
@@ -1388,7 +1388,9 @@ public class WinderMove : MonoBehaviour
     {
         if (maxHp <= 0)
             maxHp = 100;
-        int amount = level <= 1 ? 25 : (level == 2 ? 50 : maxHp);
+        int amount = AbilitySettings.ByLevel(AbilitySettings.Current.healAmount, level);
+        if (amount < 0)
+            amount = maxHp; // -1 = 최대 체력까지
         hp = Mathf.Min(maxHp, hp + amount);
         if (hud != null)
             hud.SetHp(hp);

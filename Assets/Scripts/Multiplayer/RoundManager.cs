@@ -72,7 +72,7 @@ public class RoundManager : MonoBehaviour
     public bool ResultWinderWon => resultWinderWon;
 
     /// <summary>온라인이고 방장이 아님 → 라운드 진행은 방장이 보낸 대로</summary>
-    static bool NetFollower => FusionMatchBackend.Online != null && !FusionMatchBackend.Online.IsHost;
+    static bool NetFollower => (FusionMatchBackend.Online != null && !FusionMatchBackend.Online.IsHost) || MatchContext.Migrating;
 
     // UI
     Canvas canvas;
@@ -112,6 +112,7 @@ public class RoundManager : MonoBehaviour
     {
         Instance = this;
         RoundNumber = MatchContext.Round;
+        DisguiseLeft = AbilitySettings.Current.disguiseUses; // 판당 변장 횟수
         // 온라인에서 방장이 아니면 맵 AI 는 방장 것을 따라 보여주므로 직접 만들지 않음
         DemoSceneAIBootstrap.SkipAISpawn = NetFollower;
         // 씬에 놓여 있던 테스트용 캐릭터는 Start 전에 꺼 둠
@@ -573,14 +574,25 @@ public class RoundManager : MonoBehaviour
         countdownMsgLeft = seconds;
     }
 
-    /// <summary>내 기록: 추격 시간 동안 살아 있으면 따돌린 시간 +, 와인더에게 쓰러지면 그 와인더에게 알림</summary>
+    bool wasWinderAlive;
+
+    /// <summary>내 기록: 추격 시간 동안 살아 있으면 따돌린 시간 +, 쓰러지면 사망 수 +, 와인더에게 쓰러지면 그 와인더에게 알림</summary>
     void UpdateStats()
     {
+        bool winderAlive = localWinder != null && !localWinder.IsDead;
+        if (wasWinderAlive && !winderAlive && localWinder != null && localWinder.IsDead)
+            MatchStats.Deaths++;
+        wasWinderAlive = winderAlive;
+
         bool alive = localTickToy != null && !localTickToy.IsDead && !LateSpectator;
         if (alive && phase == Phase.Hunt && !aborted)
             MatchStats.SurviveSeconds += Time.deltaTime;
-        if (wasTickToyAlive && !alive && localTickToy != null && localTickToy.IsDead && lastAttackerId != 0)
-            FusionMatchBackend.Online?.SendKill(lastAttackerId);
+        if (wasTickToyAlive && !alive && localTickToy != null && localTickToy.IsDead)
+        {
+            MatchStats.Deaths++;
+            if (lastAttackerId != 0)
+                FusionMatchBackend.Online?.SendKill(lastAttackerId);
+        }
         wasTickToyAlive = alive;
     }
 
@@ -698,7 +710,6 @@ public class RoundManager : MonoBehaviour
     }
 
     // ---------------- 와인더 Z: 의심되는 틱토이 표시 ----------------
-    const float MarkCooldown = 10f; // 한 번 표시하면 10초 뒤에 다시 (같은 대상이든 다른 대상이든)
     const float MarkRange = 60f;
     float markReadyTime;
     static readonly RaycastHit[] markHits = new RaycastHit[32];
@@ -719,7 +730,7 @@ public class RoundManager : MonoBehaviour
             && !FindMarkTarget(Physics.SphereCastNonAlloc(ray, 0.35f, markHits, MarkRange, ~0, QueryTriggerInteraction.Ignore), out id, out obj))
             return;
 
-        markReadyTime = Time.time + MarkCooldown;
+        markReadyTime = Time.time + AbilitySettings.Current.markCooldown; // 같은 대상이든 다른 대상이든
         SuspectMarks.Add(id, obj);
         if (id != 0)
             FusionMatchBackend.Online?.SendMark(id);
@@ -763,9 +774,6 @@ public class RoundManager : MonoBehaviour
     }
 
     // ---------------- 와인더 조준점 + 근처 틱토이 힌트 바 ----------------
-    const float HintStartLeft = 120f; // 남은 시간이 2:00 이 되면 힌트 바가 나타남
-    const float HintFullDistance = 10f;  // 이 거리 안에 틱토이 플레이어가 있으면 가득
-    const float HintEmptyDistance = 35f; // 이 거리보다 멀면 비어 있음 (범위를 넓게 → 한 마리씩 찾기엔 부족한 힌트)
     WinderAimHud winderAimHud;
     float hintFill;
 
@@ -777,7 +785,7 @@ public class RoundManager : MonoBehaviour
             return;
 
         bool aim = localWinder != null && !localWinder.IsDead && !aborted;
-        bool bar = aim && phase == Phase.Hunt && phaseLeft <= HintStartLeft;
+        bool bar = aim && phase == Phase.Hunt && phaseLeft <= AbilitySettings.Current.hintStartLeft;
         winderAimHud.SetVisible(aim, bar);
         if (!bar)
         {
@@ -795,16 +803,14 @@ public class RoundManager : MonoBehaviour
                 continue;
             nearest = Mathf.Min(nearest, Vector3.Distance(me, nc.Pos));
         }
-        float target = Mathf.InverseLerp(HintEmptyDistance, HintFullDistance, nearest);
+        float target = Mathf.InverseLerp(AbilitySettings.Current.hintEmptyDistance, AbilitySettings.Current.hintFullDistance, nearest);
         target = Mathf.Round(target * 5f) / 5f; // 5칸으로만 → 정확한 위치는 안 알려 줌
         hintFill = Mathf.MoveTowards(hintFill, target, Time.deltaTime);
         winderAimHud.SetFill(hintFill);
     }
 
     // ---------------- 틱토이 변장 (Q) ----------------
-    const int DisguiseUses = 5;
-    const float DisguiseReach = 2.5f;
-    public int DisguiseLeft { get; private set; } = DisguiseUses;
+    public int DisguiseLeft { get; private set; }
 
     void UpdateDisguise()
     {
@@ -833,7 +839,7 @@ public class RoundManager : MonoBehaviour
     static int NearestAiChar(Vector3 pos)
     {
         int best = -1;
-        float bestDist = DisguiseReach;
+        float bestDist = AbilitySettings.Current.disguiseReach;
         foreach (TickToyAI ai in FindObjectsByType<TickToyAI>(FindObjectsSortMode.None))
         {
             float d = Vector3.Distance(pos, ai.transform.position);

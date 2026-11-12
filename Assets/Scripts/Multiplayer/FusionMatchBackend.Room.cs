@@ -265,6 +265,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             // 방장 넘기는 중에 나가기 → 넘기기를 멈추고 방 목록으로
             handoverCancelled = true;
             handingOver = false;
+            handoverGhosts.Clear();
             players.Clear();
             current = null;
             RoomChanged?.Invoke();
@@ -319,6 +320,50 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     bool handingOver;
     bool handoverCancelled;
     const float HandoverGiveUpSeconds = 40f;
+    /// <summary>방장이 바뀌는 동안 아직 다시 안 들어온 사람들 ('연결 중' 으로 목록에 남겨 둠)</summary>
+    readonly List<RoomPlayer> handoverGhosts = new List<RoomPlayer>();
+    float handoverGhostsUntil;
+    const float HandoverGhostSeconds = 15f;
+
+    void SetHandoverGhosts(List<RoomPlayer> order)
+    {
+        handoverGhosts.Clear();
+        string me = PlayerProfile.Nickname;
+        for (int i = 0; i < order.Count; i++)
+        {
+            RoomPlayer p = order[i];
+            if (string.IsNullOrEmpty(p.nickname))
+                continue;
+            handoverGhosts.Add(new RoomPlayer { id = -1000 - i, nickname = p.nickname, team = p.team, isLocal = p.nickname == me, connecting = true });
+        }
+        handoverGhostsUntil = Time.realtimeSinceStartup + HandoverGhostSeconds;
+    }
+
+    /// <summary>실제 목록 + 아직 안 들어온 사람 (같은 닉네임이 들어오면 그 사람으로 바뀜)</summary>
+    List<RoomPlayer> WithGhosts()
+    {
+        List<RoomPlayer> list = new List<RoomPlayer>(players);
+        foreach (RoomPlayer g in handoverGhosts)
+        {
+            if (players.Find(p => p.nickname == g.nickname) == null)
+                list.Add(g);
+        }
+        return list;
+    }
+
+    /// <summary>모두 다시 들어왔거나 시간이 지나면 '연결 중' 표시를 지움</summary>
+    void UpdateHandoverGhosts()
+    {
+        if (handoverGhosts.Count == 0)
+            return;
+        bool allBack = handoverGhosts.TrueForAll(g => players.Find(p => p.nickname == g.nickname) != null);
+        bool gone = !InRoom && !handingOver;
+        if (allBack || gone || Time.realtimeSinceStartup > handoverGhostsUntil)
+        {
+            handoverGhosts.Clear();
+            RoomChanged?.Invoke();
+        }
+    }
     const float HandoverTurnSeconds = 6f; // 앞 순서 사람이 방을 못 열면 이만큼 뒤에 다음 사람이 엶
 
     IEnumerator Handover(RoomSettings room, List<RoomPlayer> oldPlayers, int myOldId, bool inMatch)
@@ -341,6 +386,8 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 order.Add(new RoomPlayer { id = oldHost.id, nickname = oldHost.nickname, team = oldHost.team });
         }
         transferToId = 0;
+        if (!inMatch)
+            SetHandoverGhosts(order); // 다시 들어올 때까지 목록에서 사라지지 않게
         int myRank = order.FindIndex(p => p.id == myOldId);
         if (myRank < 0)
             myRank = order.Count; // (방장이던 내 연결이 끊긴 경우) 맨 뒤 순서
@@ -352,25 +399,26 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                 pendingTeams[p.nickname] = p.team;
         }
 
-        // 게임 중이었으면 안내 띠를 보여 주고 방으로
-        if (inMatch && RoundManager.Instance != null)
+        // 게임 중이면 게임을 끝내지 않고 그대로 이어감 (맵·라운드·남은 시간 유지, 새 방장에게 다시 연결되는 동안 잠깐 멈춤)
+        // 게임 중이 아니면 방 화면으로
+        if (inMatch)
+            MatchContext.Migrating = true;
+        else
         {
-            RoundManager.Instance.ShowMatchAbort(order.Count <= 1 ? "상대가 없어 게임을 종료합니다." : "방장이 나가 게임을 종료합니다.");
-            yield return new WaitForSecondsRealtime(3f);
+            MatchContext.Active = false;
+            MatchContext.ReturnToRoom = room != null;
+            if (SceneManager.GetActiveScene().name != MatchService.LobbyScene)
+                SceneManager.LoadScene(MatchService.LobbyScene);
+            yield return null;
+            yield return null;
         }
-        MatchContext.Active = false;
-        MatchContext.ReturnToRoom = room != null;
-        if (SceneManager.GetActiveScene().name != MatchService.LobbyScene)
-            SceneManager.LoadScene(MatchService.LobbyScene);
-        yield return null;
-        yield return null;
 
         bool ok = false;
         bool iAmHost = false;
         float start = Time.realtimeSinceStartup;
         List<RoomPlayer> view = new List<RoomPlayer>(players); // 넘기는 동안 보여 줄 방 화면
         if (myRank > 0)
-            yield return new WaitForSecondsRealtime(1.5f); // 새 방장이 방을 열 시간
+            yield return new WaitForSecondsRealtime(0.7f); // 새 방장이 방을 열 시간
         while (room != null && !ok && !quitting && !handoverCancelled && Time.realtimeSinceStartup - start < HandoverGiveUpSeconds)
         {
             // 내 차례가 되면 방을 직접 엶 (이미 누가 열었으면 실패 → 들어가기)
@@ -397,10 +445,11 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
                     players.Clear();
                     players.AddRange(view);
                 }
-                yield return new WaitForSecondsRealtime(1f);
+                yield return new WaitForSecondsRealtime(0.5f);
             }
         }
         handingOver = false;
+        MatchContext.Migrating = false;
 
         if (ok && handoverCancelled)
         {
@@ -413,16 +462,181 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
         if (ok)
         {
             RoomPlayer host = players.Find(p => p.isHost);
-            StartCoroutine(ErrorLater(iAmHost ? "방장이 되셨습니다!" : (host != null ? host.nickname : "") + " 님이 새 방장이 되었어요."));
+            if (inMatch && iAmHost)
+            {
+                RoomPlayer leftHost = oldPlayers.Find(p => p.isHost);
+                HostResumeMatch(leftHost != null ? leftHost.nickname : null); // 새 방장: 맵 AI 를 이어받아 게임을 계속 진행
+            }
+            if (inMatch)
+                matchSawNet = false; // 새 방장의 네트워크 캐릭터가 생길 때까지 '방으로 돌아가기'로 착각하지 않게
+            if (!inMatch)
+                StartCoroutine(ErrorLater(iAmHost ? "방장이 되셨습니다!" : (host != null ? host.nickname : "") + " 님이 새 방장이 되었어요."));
         }
         else
         {
             players.Clear();
             current = null;
             MatchContext.ReturnToRoom = false;
+            if (inMatch)
+            {
+                // 다시 연결 못 함 → 게임에서 나와 로비로
+                MatchContext.Active = false;
+                SceneManager.LoadScene(MatchService.LobbyScene);
+            }
             RoomChanged?.Invoke();
             StartCoroutine(ErrorLater("인터넷 연결이 불안정해서 방에 다시 들어가지 못했어요."));
             RejoinLobby();
+        }
+    }
+
+    // ---------------- 게임 중 방장 교체: 게임을 끝내지 않고 이어감 ----------------
+
+    /// <summary>(새 방장) 경기 명단에서 닉네임이 같은 사람의 id 를 새 연결 id 로 바꾸고 모두에게 명단을 보냄. 명단에 없으면 false</summary>
+    bool RemapRosterId(string nick, int newId)
+    {
+        RoomPlayer entry = MatchContext.Players.Find(p => p.nickname == nick);
+        if (entry == null)
+            return false;
+        entry.id = newId;
+        MatchContext.AssignRolesFromTeams();
+        SendToClients(Msg(H2C_Roster, WriteRoster));
+        return true;
+    }
+
+    void WriteRoster(BinaryWriter w)
+    {
+        w.Write((byte)MatchContext.Players.Count);
+        foreach (RoomPlayer p in MatchContext.Players)
+        {
+            w.Write(p.id);
+            w.Write(p.nickname ?? "");
+            w.Write((byte)p.team);
+        }
+    }
+
+    /// <summary>(참가자) 새 방장이 보낸 경기 명단 (방장이 바뀌면 모두의 연결 id 가 바뀜)</summary>
+    void ReadRoster(BinaryReader rd)
+    {
+        MatchContext.Players.Clear();
+        int n = rd.ReadByte();
+        for (int i = 0; i < n; i++)
+            MatchContext.Players.Add(new RoomPlayer { id = rd.ReadInt32(), nickname = rd.ReadString(), team = rd.ReadByte() });
+        MatchContext.AssignRolesFromTeams();
+        if (runner != null)
+            MatchContext.LocalId = runner.LocalPlayer.PlayerId;
+    }
+
+    /// <summary>(새 방장) 게임 이어받기: 내 id 갱신, 마지막으로 보던 맵 AI 들을 진짜 AI 로 다시 만들고 네트워크 캐릭터 생성.
+    /// 라운드·단계·남은 시간은 내 화면 값 그대로 이어서 진행</summary>
+    void HostResumeMatch(string leftHostNick)
+    {
+        // 나간 방장은 명단에서 빼고, 나는 새 id. 아직 다시 연결 안 된 사람은 겹치지 않는 임시 id(음수) → 들어오면 새 id 로
+        MatchContext.Players.RemoveAll(p => p.nickname == leftHostNick);
+        for (int i = 0; i < MatchContext.Players.Count; i++)
+        {
+            RoomPlayer p = MatchContext.Players[i];
+            p.id = p.nickname == nickname ? LocalPlayerId : -(i + 1);
+        }
+        MatchContext.LocalId = LocalPlayerId;
+        MatchContext.AssignRolesFromTeams();
+        // 승패는 바로 판정. 단, 아직 다시 연결 중인 사람(임시 id)은 10초 동안 방장이 나가기 직전 상태(살아 있었는지)로 셈
+        // → 연결 중인 팀을 '전멸'로 잘못 보지 않으면서, 그 사이 마지막 틱토이가 잡히면 바로 와인더 승리
+        rejoinGraceUntil = Time.realtimeSinceStartup + RejoinGraceSeconds;
+
+        MatchPrefabs prefabs = MatchPrefabs.Load();
+        if (prefabs != null && prefabs.tickToyPrefabs != null && prefabs.tickToyPrefabs.Length > 0)
+        {
+            foreach (AiSnapshot a in aiSnapshot)
+            {
+                GameObject prefab = prefabs.tickToyPrefabs[Mathf.Clamp(a.ch, 0, prefabs.tickToyPrefabs.Length - 1)];
+                GameObject ai = Instantiate(prefab, a.pos, Quaternion.Euler(0f, a.yaw, 0f));
+                ai.name = prefab.name + "_AI";
+                DemoSceneAIBootstrap.ConvertToAI(ai, a.pos);
+                // 쓰러져 있던 AI 는 쓰러진 채로 (기절한 척하는 틱토이와 헷갈리게 하는 요소라 그대로 남김)
+                if (ai.TryGetComponent(out TickToyAI restored))
+                {
+                    if (!a.alive)
+                        restored.SpawnDown();
+                    else
+                        restored.RestoreState(a.state, a.stateLeft, a.moveYaw, a.commandLeft, a.commandEmote, a.emoting); // 하던 동작 그대로
+                }
+            }
+        }
+        aiSnapshot.Clear();
+        playersSpawned = false; // 모두의 네트워크 캐릭터를 새로 만듦
+        aiRefreshTimer = 1f;
+        StartCoroutine(CheckTeamsAfterResume());
+    }
+
+    /// <summary>(새 방장) 잠시 기다린 뒤에도 한 팀이 비어 있으면 (그 팀 사람이 방장이었음) 게임 종료 → 방으로</summary>
+    IEnumerator CheckTeamsAfterResume()
+    {
+        yield return new WaitForSecondsRealtime(RejoinGraceSeconds);
+        if (IsHost && MatchContext.Active)
+            HostCheckTeamEmptyAfterLeave();
+    }
+
+    struct AiSnapshot
+    {
+        public Vector3 pos;
+        public float yaw;
+        public int ch;
+        public bool alive;
+        public int state;
+        public float stateLeft, moveYaw, commandLeft;
+        public int commandEmote, emoting;
+    }
+
+    /// <summary>(참가자) 맵 AI 들의 마지막 위치 — 방장이 나가면 새 방장이 이걸로 AI 를 이어받음</summary>
+    readonly List<AiSnapshot> aiSnapshot = new List<AiSnapshot>();
+    float aiSnapshotTimer;
+
+    const float RejoinGraceSeconds = 10f;
+    /// <summary>(새 방장) 이 시간까지는 아직 다시 연결 중인 사람을 나가기 직전 상태로 셈</summary>
+    float rejoinGraceUntil;
+    /// <summary>(참가자) 방장이 나가기 직전 각 플레이어가 살아 있었는지 (닉네임 → 생존)</summary>
+    readonly Dictionary<string, bool> lastAlive = new Dictionary<string, bool>();
+
+    /// <summary>(새 방장 판정용) 아직 다시 연결 중인 사람이면 true 와 직전 생존 여부</summary>
+    bool PendingRejoin(RoomPlayer p, out bool alive)
+    {
+        alive = false;
+        if (p.id >= 0 || Time.realtimeSinceStartup >= rejoinGraceUntil)
+            return false;
+        alive = !lastAlive.TryGetValue(p.nickname ?? "", out bool a) || a;
+        return true;
+    }
+
+    void ClientRememberAIs()
+    {
+        aiSnapshotTimer += Time.unscaledDeltaTime;
+        if (aiSnapshotTimer < 0.5f)
+            return;
+        aiSnapshotTimer = 0f;
+        aiSnapshot.Clear();
+        lastAlive.Clear();
+        RoundManager rm = RoundManager.Instance;
+        foreach (RoomPlayer p in MatchContext.Players)
+        {
+            if (string.IsNullOrEmpty(p.nickname))
+                continue;
+            if (p.id == MatchContext.LocalId)
+                lastAlive[p.nickname] = rm == null || rm.LocalAlive;
+            else if (NetCharacter.Players.TryGetValue(p.id, out NetCharacter pc) && pc != null && pc.Object != null && pc.Object.IsValid
+                     && pc.HasPose && pc.PoseRound == MatchContext.Round)
+                lastAlive[p.nickname] = pc.Alive;
+        }
+        foreach (NetCharacter nc in NetCharacter.ById.Values)
+        {
+            if (nc == null || nc.Object == null || !nc.Object.IsValid || nc.Kind != NetPose.KindAI || !nc.HasPose)
+                continue;
+            aiSnapshot.Add(new AiSnapshot
+            {
+                pos = nc.Pos, yaw = nc.Yaw, ch = nc.Ch, alive = nc.Alive,
+                state = nc.AiStateIndex, stateLeft = Mathf.Max(0f, nc.AiStateEnd - nc.Runner.SimulationTime), moveYaw = nc.AiMoveYaw,
+                commandLeft = nc.AiCommandAt < 0f ? -1f : Mathf.Max(0f, nc.AiCommandAt - nc.Runner.SimulationTime),
+                commandEmote = nc.AiCommandEmote, emoting = nc.AiEmoting
+            });
         }
     }
 
@@ -447,7 +661,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
 
     IEnumerator TransferThenRejoin()
     {
-        yield return new WaitForSecondsRealtime(0.5f); // 알림이 모두에게 도착할 시간
+        yield return new WaitForSecondsRealtime(0.25f); // 알림이 모두에게 도착할 시간
         if (!InRoom || runner == null)
             yield break;
 
@@ -681,6 +895,10 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
             team = 1 - team;
         players.Add(new RoomPlayer { id = player.PlayerId, nickname = nick, team = team, ready = false });
         BroadcastRoom();
+
+        // 방장이 바뀌어 같은 게임에 다시 연결된 사람 → 경기 명단의 id 만 새 연결 id 로 바꾸고 그대로 계속
+        if (MatchContext.Active && RemapRosterId(nick, player.PlayerId))
+            return;
 
         // 게임 중에 들어옴 → 지금 맵으로 불러서 이번 라운드는 관전, 다음 라운드부터 참가
         if (MatchContext.Active)

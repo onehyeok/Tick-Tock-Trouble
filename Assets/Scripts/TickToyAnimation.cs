@@ -192,7 +192,7 @@ public class TickToyAnimation : MonoBehaviour
             else
                 animator.SetTrigger("WindPause");
             if (winder != null)
-                winder.Freeze(5f);
+                winder.Freeze(AbilitySettings.Current.winderStopSeconds);
             else
                 FusionMatchBackend.Online?.SendWinderStop(remoteWinder.NetId);
             MatchStats.Stops++; // 내 기록: 와인더 정지 횟수

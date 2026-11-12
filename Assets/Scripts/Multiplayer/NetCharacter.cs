@@ -19,7 +19,7 @@ public struct NetPoseInput : INetworkInput
     public float HudWind;  // 태엽 바 진행 (0~1, 안 감으면 -1)
     public float HudTimer; // 능력 시계 남은 비율 (0~1, 없으면 -1)
     public float Spring;   // 와인더 등 태엽 각도 (0~360)
-    public int StatSurvive, StatStops, StatAbilities, StatKills; // 내 기록 (매치 합계, MatchStats)
+    public int StatSurvive, StatStops, StatAbilities, StatKills, StatDeaths; // 내 기록 (매치 합계, MatchStats)
 
     public bool Valid => (Info & (1 << 17)) != 0;
 
@@ -102,6 +102,15 @@ public class NetCharacter : NetworkBehaviour
     [Networked] public int StatStops { get; set; }
     [Networked] public int StatAbilities { get; set; }
     [Networked] public int StatKills { get; set; }
+    [Networked] public int StatDeaths { get; set; }
+    /// <summary>맵 AI 가 하던 동작 (방장이 바뀌면 새 방장이 이어받음): 동작·끝나는 시각·방향·명령 이모트 시각·명령 이모트·하던 이모트.
+    /// 남은 시간 대신 '끝나는 시각' 을 보내서 동작이 바뀔 때만 값이 바뀜 → 매 틱 전송량이 늘지 않음</summary>
+    [Networked] public byte AiStateIndex { get; set; }
+    [Networked] public float AiStateEnd { get; set; }
+    [Networked] public float AiMoveYaw { get; set; }
+    [Networked] public float AiCommandAt { get; set; }
+    [Networked] public byte AiCommandEmote { get; set; }
+    [Networked] public sbyte AiEmoting { get; set; }
     [Networked, Capacity(6)] public NetworkArray<int> Hashes => default;
     [Networked, Capacity(6)] public NetworkArray<float> Weights => default;
     [Networked, Capacity(12)] public NetworkArray<float> Params => default;
@@ -155,6 +164,20 @@ public class NetCharacter : NetworkBehaviour
             }
             Write(NetPose.Capture(SourceAI.gameObject, NetId, NetPose.KindAI, Ch, !SourceAI.IsDead,
                 SourceAI.HitFaceActive ? NetPose.FlagHitFace : 0));
+            // 값이 실제로 바뀔 때만 기록 (같은 값이면 Fusion 이 보내지 않음)
+            float now = Runner.SimulationTime;
+            AiStateIndex = (byte)SourceAI.StateIndex;
+            float stateEnd = now + SourceAI.StateLeft;
+            if (Mathf.Abs(stateEnd - AiStateEnd) > 0.5f)
+                AiStateEnd = stateEnd;
+            if (Mathf.Abs(Mathf.DeltaAngle(SourceAI.MoveYaw, AiMoveYaw)) > 5f)
+                AiMoveYaw = SourceAI.MoveYaw;
+            float cmdLeft = SourceAI.CommandLeft;
+            float cmdAt = cmdLeft < 0f ? -1f : now + cmdLeft;
+            if (cmdAt < 0f ? AiCommandAt >= 0f : Mathf.Abs(cmdAt - AiCommandAt) > 0.5f)
+                AiCommandAt = cmdAt;
+            AiCommandEmote = (byte)SourceAI.CommandEmote;
+            AiEmoting = (sbyte)SourceAI.EmotingIndex;
             return;
         }
 
@@ -182,6 +205,7 @@ public class NetCharacter : NetworkBehaviour
             StatStops = stats.StatStops;
             StatAbilities = stats.StatAbilities;
             StatKills = stats.StatKills;
+            StatDeaths = stats.StatDeaths;
         }
         if (GetInput(out NetPoseInput inp) && inp.Valid)
         {

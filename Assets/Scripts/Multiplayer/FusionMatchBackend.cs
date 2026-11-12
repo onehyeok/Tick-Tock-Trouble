@@ -85,6 +85,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     const byte H2C_HostTransfer = 30; // 방장이 다른 사람에게 방장을 넘김 (id)
     const byte H2C_Kicked = 31;       // 방장이 나를 강퇴함
     const byte H2C_JoinMatch = 32;    // 게임 중에 들어온 사람에게: 지금 맵·라운드 (이번 라운드는 관전)
+    const byte H2C_Roster = 33;       // 게임 중 방장이 바뀐 뒤 새 연결 id 로 고친 경기 명단
 
     const int AiIdBase = 10000;
     /// <summary>테스트 봇 id (1000~): 사람 PlayerId 와 AI id 사이</summary>
@@ -119,7 +120,7 @@ public partial class FusionMatchBackend : MonoBehaviour, IMatchBackend, INetwork
     public int LocalPlayerId => InRoom && runner != null ? runner.LocalPlayer.PlayerId : 0;
     public RoomSettings CurrentRoom => InRoom || handingOver ? current : null;
     public IReadOnlyList<RoomInfo> Rooms => rooms;
-    public IReadOnlyList<RoomPlayer> RoomPlayers => players;
+    public IReadOnlyList<RoomPlayer> RoomPlayers => handoverGhosts.Count > 0 ? WithGhosts() : players;
 
     public event Action RoomsChanged;
     public event Action RoomChanged;

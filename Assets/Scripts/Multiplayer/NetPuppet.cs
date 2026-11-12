@@ -531,7 +531,7 @@ public class NetPuppet : MonoBehaviour
                 springSynced = true;
             }
             if (turning)
-                winderSpringDeg += 360f / WinderMove.FullTurnSeconds * Time.deltaTime;
+                winderSpringDeg += 360f / AbilitySettings.Current.springTurnSeconds * Time.deltaTime;
             winderSpringDeg += Mathf.DeltaAngle(winderSpringDeg, targetSpringDeg) * Mathf.Clamp01(Time.deltaTime * 6f);
             winderSpringDeg = Mathf.Repeat(winderSpringDeg, 360f);
             winderSpring.localRotation = winderSpringBase * Quaternion.Euler(0f, -winderSpringDeg, 0f);

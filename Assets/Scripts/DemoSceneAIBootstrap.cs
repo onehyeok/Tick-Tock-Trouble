@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI;
 
 /// <summary>
 /// DemoScene 시작 시: 타일 맞춤 경계벽 → TickToy AI를 맵 전역에 골고루 스폰.
@@ -13,7 +12,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
     public static bool SkipAISpawn;
 
     [SerializeField] private GameObject[] tickToyPrefabs;
-    [SerializeField] private int aiCount = 40;
+    [SerializeField] private int aiCount = 50;
     [SerializeField] private float minSpawnSpacing = 2.5f;
     [SerializeField] private Vector3 spawnCenterFallback = new Vector3(-93f, 14f, 36f);
     [SerializeField] private float clearHeadroom = 3.2f;
@@ -103,6 +102,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         const int perFrame = 2;
 
         CacheBuildingBounds();
+        CachePropBounds();
         List<Vector3> slots = BuildSpreadSlots(mapBounds, Mathf.Max(aiCount * 4, 80));
         int slotIndex = 0;
 
@@ -166,7 +166,7 @@ public class DemoSceneAIBootstrap : MonoBehaviour
                 }
             }
 
-            // 4) 최후: 간격 거의 무시하고라도 40 채우기
+            // 4) 최후: 간격 거의 무시하고라도 다 채우기 (소품·건물 안은 여전히 제외)
             if (!ok)
             {
                 for (int t = 0; t < 100; t++)
@@ -316,8 +316,8 @@ public class DemoSceneAIBootstrap : MonoBehaviour
             return false;
         }
 
-        // ?? ??? ?? ????? ?? ??
-        if (IsBodyOverlappingProp(ground))
+        // 소품(쓰레기통·벤치 등)과 몸이 겹치는 자리 제외 (콜라이더가 없는 소품도 모양 범위로 검사)
+        if (IsBodyOverlappingProp(ground) || IsInsidePropBounds(ground))
         {
             reason = 3;
             return false;
@@ -490,6 +490,49 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         return false;
     }
 
+    readonly List<Bounds> propBounds = new List<Bounds>();
+
+    /// <summary>바닥·건물·캐릭터를 뺀 소품의 모양 범위 (콜라이더 유무와 상관없이 스폰 금지 구역)</summary>
+    void CachePropBounds()
+    {
+        propBounds.Clear();
+        GameObject floors = GameObject.Find("Floors");
+        foreach (MeshRenderer r in FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+        {
+            if (r == null || !r.enabled)
+                continue;
+            Transform t = r.transform;
+            if (floors != null && t.IsChildOf(floors.transform))
+                continue;
+            if (IsBuildingObject(t)) // 건물은 따로 검사
+                continue;
+            Collider col = r.GetComponent<Collider>();
+            if (col != null && (AiGroundUtil.IsWalkableGround(col) || AiGroundUtil.IsLooseGround(col))) // 걸을 수 있는 바닥
+                continue;
+            if (t.GetComponentInParent<TickToyMove>() != null || t.GetComponentInParent<WinderMove>() != null || t.GetComponentInParent<TickToyAI>() != null)
+                continue;
+            Bounds b = r.bounds;
+            if (b.size.x > 40f || b.size.z > 40f) // 바닥 전체·하늘 같은 큰 것 제외
+                continue;
+            propBounds.Add(b);
+        }
+    }
+
+    /// <summary>캐릭터 몸(발~머리)이 소품 모양 범위와 겹치면 true. 머리 위 높은 곳(전선·간판)은 제외</summary>
+    bool IsInsidePropBounds(Vector3 ground)
+    {
+        Bounds body = new Bounds(ground + Vector3.up * 0.9f, new Vector3(0.9f, 1.5f, 0.9f));
+        for (int i = 0; i < propBounds.Count; i++)
+        {
+            Bounds b = propBounds[i];
+            if (b.max.y < ground.y + 0.2f || b.min.y > ground.y + 1.8f) // 바닥에 붙은 납작한 것 / 머리 위
+                continue;
+            if (b.Intersects(body))
+                return true;
+        }
+        return false;
+    }
+
     bool IsBodyOverlappingProp(Vector3 ground)
     {
         Vector3 chest = ground + Vector3.up * 0.95f;
@@ -565,13 +608,6 @@ public class DemoSceneAIBootstrap : MonoBehaviour
         AudioListener[] listeners = instance.GetComponentsInChildren<AudioListener>(true);
         for (int i = 0; i < listeners.Length; i++)
             listeners[i].enabled = false;
-
-        NavMeshAgent agent = instance.GetComponent<NavMeshAgent>();
-        if (agent != null)
-        {
-            agent.enabled = false;
-            Destroy(agent);
-        }
 
         Collider body = instance.GetComponent<Collider>();
         if (body == null)
