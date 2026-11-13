@@ -920,7 +920,7 @@ public class TickToyMove : MonoBehaviour
             yaw += 180f;
 
         // 틱토이는 좌우만 회전 (마우스 위아래로 카메라 각도 안 바뀜)
-        yaw += mouseX * GameSettings.HorizontalSensitivity * Time.deltaTime;
+        yaw += mouseX * GameSettings.HorizontalLookSpeed * Time.deltaTime;
     }
 
     void UpdateTpsCamera()

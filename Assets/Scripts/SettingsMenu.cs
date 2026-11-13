@@ -62,6 +62,8 @@ public class SettingsMenu : MonoBehaviour
             root.SetActive(open);
         if (exitButton != null)
             exitButton.SetActive(!InMenuScene());
+        if (quitRect != null) // 로비로 나가기가 없으면 가운데로
+            quitRect.anchoredPosition = new Vector2(InMenuScene() ? 0f : 140f, quitRect.anchoredPosition.y);
 
         if (open)
         {
@@ -74,6 +76,18 @@ public class SettingsMenu : MonoBehaviour
             Cursor.visible = false;
             Cursor.lockState = CursorLockMode.Locked;
         }
+    }
+
+    RectTransform quitRect;
+
+    /// <summary>게임을 완전히 끔</summary>
+    void QuitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
     /// <summary>게임을 그만두고 로비(방 목록)로</summary>
@@ -147,9 +161,16 @@ public class SettingsMenu : MonoBehaviour
 
         Button exit = UIKit.Button(panel, "ExitToLobbyButton", "로비로 나가기", UIKit.Orange, Color.white, 34);
         exit.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
-        exit.GetComponent<RectTransform>().At(new Vector2(0.5f, 1f), new Vector2(0f, -345f), new Vector2(320f, 70f));
+        exit.GetComponent<RectTransform>().At(new Vector2(0.5f, 1f), new Vector2(-140f, -345f), new Vector2(260f, 70f));
         exit.onClick.AddListener(ExitToLobby);
         exitButton = exit.gameObject;
+
+        // 게임 종료하기: 프로그램을 완전히 끔 (어느 화면에서나)
+        Button quit = UIKit.Button(panel, "QuitGameButton", "게임 종료하기", UIKit.Pink, Color.white, 34);
+        quit.GetComponentInChildren<Text>().Outlined(UIKit.Brown, 2f);
+        quitRect = quit.GetComponent<RectTransform>();
+        quitRect.At(new Vector2(0.5f, 1f), new Vector2(140f, -345f), new Vector2(260f, 70f));
+        quit.onClick.AddListener(QuitGame);
 
         Text hint = UIKit.Label(panel, "Hint", "ESC 로 닫기", 24, new Color(0.36f, 0.22f, 0.13f, 0.7f));
         hint.rectTransform.At(new Vector2(0.5f, 0f), new Vector2(0f, 14f), new Vector2(560f, 36f));

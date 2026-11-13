@@ -15,6 +15,18 @@ public static class GameSettings
 
     public static float HorizontalSensitivity { get; private set; } = DefaultSensitivity;
     public static float VerticalSensitivity { get; private set; } = DefaultSensitivity;
+
+    /// <summary>좌우 감도를 실제 회전 속도로. 가운데(50)는 그대로, 왼쪽 끝(1)은 더 느리게(0.5), 오른쪽 끝(100)은 더 빠르게(300)</summary>
+    public static float HorizontalLookSpeed
+    {
+        get
+        {
+            float s = HorizontalSensitivity;
+            if (s <= DefaultSensitivity)
+                return DefaultSensitivity * Mathf.Pow(0.01f, (DefaultSensitivity - s) / (DefaultSensitivity - MinSensitivity));
+            return DefaultSensitivity * Mathf.Pow(6f, (s - DefaultSensitivity) / (MaxSensitivity - DefaultSensitivity));
+        }
+    }
     /// <summary>로비(인트로·로비) 노래 크기 0~100</summary>
     public static float LobbyVolume { get; private set; } = DefaultVolume;
     /// <summary>게임 맵 노래 + 효과음 크기 0~100</summary>

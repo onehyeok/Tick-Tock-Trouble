@@ -611,10 +611,12 @@ public class RoundManager : MonoBehaviour
         switch (phase)
         {
             case Phase.Hide:
+                int shown = Mathf.Max(0, Mathf.CeilToInt(phaseLeft)); // 마이너스로 내려가지 않게
                 countdownText.text = MatchContext.LocalIsWinder
-                    ? $"{Mathf.CeilToInt(phaseLeft)}초 뒤 문이 열려요"
-                    : $"와인더 출발까지 {Mathf.CeilToInt(phaseLeft)}초";
-                if (phaseLeft <= 0f && !NetFollower)
+                    ? $"{shown}초 뒤 문이 열려요"
+                    : $"와인더 출발까지 {shown}초";
+                // 참가자: 원래는 방장 신호로 문이 열림. 신호가 끊겨(Alt+Tab 등) 시간이 지나도 안 오면 직접 열고 게임을 이어감
+                if (phaseLeft <= 0f && (!NetFollower || phaseLeft <= -1f))
                     EnterHunt();
                 break;
 

@@ -1746,7 +1746,7 @@ public class WinderMove : MonoBehaviour
                 rb.rotation = turned;
         }
 
-        transform.Rotate(Vector3.up * mouseX * GameSettings.HorizontalSensitivity * Time.deltaTime);
+        transform.Rotate(Vector3.up * mouseX * GameSettings.HorizontalLookSpeed * Time.deltaTime);
 
         xRotation -= mouseY * GameSettings.VerticalSensitivity * Time.deltaTime;
         xRotation = Mathf.Clamp(xRotation, -80f, 80f);
